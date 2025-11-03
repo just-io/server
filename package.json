@@ -1,0 +1,58 @@
+{
+  "name": "@just-io/server",
+  "version": "1.0.0",
+  "description": "Simple web server",
+  "types": "dist/types",
+  "main": "dist/cjs/index.js",
+  "module": "dist/mjs/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/mjs/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/just-io/server.git"
+  },
+  "scripts": {
+    "test": "tsc --noEmit && rm -rf test && tsc -p tsconfig.test.json && sh ./fixup.test.sh && node --test \"test/**/*.test.js\" && rm -rf test",
+    "test:only": "tsc --noEmit && rm -rf test && tsc -p tsconfig.test.json && sh ./fixup.test.sh && node --test --test-only \"test/**/*.test.js\"; rm -rf test",
+    "lint:fix": "eslint --fix src/. && prettier --write src/.",
+    "lint": "tsc --noEmit && eslint --quiet src/. && prettier --check src/.",
+    "publish": "npm publish --access public",
+    "version:patch": "npm version --no-git-tag-version patch",
+    "version:minor": "npm version --no-git-tag-version minor",
+    "version:major": "npm version --no-git-tag-version major",
+    "build": "rm -rf dist/* && tsc -p tsconfig.mjs.json && tsc -p tsconfig.cjs.json && sh ./fixup.sh"
+  },
+  "author": "Sergey Timonovskiy",
+  "license": "MIT",
+  "keywords": [
+    "WebServer",
+    "Typescript"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "eslint": "^8.53.0",
+    "eslint-config-airbnb-typescript": "^17.1.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "prettier": "^3.0.3",
+    "ts-node": "^10.9.2",
+    "tslib": "^2.6.2",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "dist"
+  ]
+}
