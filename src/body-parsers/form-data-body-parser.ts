@@ -2,13 +2,7 @@ import http from 'node:http';
 
 import BodyParser from './body-parser';
 import { NetResponseError } from '../components/net-response-error';
-import {
-    CreateFileLocation,
-    FileData,
-    FileLocation,
-    FormValues,
-    NetRequestBody,
-} from '../types';
+import { CreateFileLocation, FileData, FileLocation, FormValues, NetRequestBody } from '../types';
 
 class Reader {
     #position = 0;

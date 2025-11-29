@@ -1,4 +1,3 @@
-
 export type ExtractGroups<Path> = Path extends `${infer Segment}/${infer Rest}`
     ? ExtractGroup<Segment> & ExtractGroups<Rest>
     : ExtractGroup<Path>;
@@ -25,7 +24,9 @@ export default class Pattern<T extends string> {
         this.#input = input;
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         this.#groups = (input.match(/:([^/]+)/g) || []).map((str) => str.match(/:([^/]+)/)![1]);
-        this.#regexp = new RegExp(`^${input.replace(/\*/g, '.*').replace(/:([^/]+)/g, () => `([^/]+)`)}$`);
+        this.#regexp = new RegExp(
+            `^${input.replace(/\*/g, '.*').replace(/:([^/]+)/g, () => `([^/]+)`)}$`,
+        );
     }
 
     exec(str: string): null | ExecResult<T> {

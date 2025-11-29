@@ -5,7 +5,10 @@ import { NetResponse } from '../types';
 import { getMimeTypeByFileExtension } from './files';
 import { NetResponseError } from '../components/net-response-error';
 
-export default class StaticRouter<Global, Context = Record<string, unknown>> extends Router<Global, Context> {
+export default class StaticRouter<Global, Context = Record<string, unknown>> extends Router<
+    Global,
+    Context
+> {
     private fullPathToFolder: string;
 
     constructor(
@@ -22,11 +25,15 @@ export default class StaticRouter<Global, Context = Record<string, unknown>> ext
             const location = path.join(this.fullPathToFolder, filename);
 
             if (!location.startsWith(this.fullPathToFolder)) {
-                return Promise.reject(new NetResponseError(403, { type: 'text', content: 'Forbidden' }));
+                return Promise.reject(
+                    new NetResponseError(403, { type: 'text', content: 'Forbidden' }),
+                );
             }
 
             if (!fs.existsSync(location)) {
-                return Promise.reject(new NetResponseError(404, { type: 'text', content: 'Not Found' }));
+                return Promise.reject(
+                    new NetResponseError(404, { type: 'text', content: 'Not Found' }),
+                );
             }
 
             return Promise.resolve({

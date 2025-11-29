@@ -49,7 +49,11 @@ export type NetRequestBody =
           content: unknown;
       };
 
-export interface NetRequest<Global = Record<string, unknown>, Context = Record<string, unknown>, Path extends string = string> {
+export interface NetRequest<
+    Global = Record<string, unknown>,
+    Context = Record<string, unknown>,
+    Path extends string = string,
+> {
     method: string;
     url: URL;
     headers: http.IncomingHttpHeaders;
@@ -109,7 +113,6 @@ export type NetResponseBody =
           content: unknown;
       };
 
-
 export type Cookie = {
     key: string;
     value: string;
@@ -126,6 +129,7 @@ export interface NetResponse {
     status?: number;
     body?: NetResponseBody;
     headers?: http.OutgoingHttpHeaders;
+    flushHeaders?: boolean;
     cookies?: Cookie[];
 }
 

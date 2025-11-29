@@ -2,7 +2,7 @@ export type PeriodData = [from: number, to?: number];
 
 export class Period {
     static make(from = Date.now()): PeriodData {
-        return [from, ];
+        return [from];
     }
 
     static end(period: PeriodData, to = Date.now()): void {

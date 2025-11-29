@@ -156,29 +156,31 @@ describe('Server API', () => {
         )
         .addRouter(
             '/context-router',
-            new Router<unknown, UserContext>((netRequest: NetRequest<unknown>): Promise<NetRequest<unknown, UserContext>> => {
-                const authorization = netRequest.headers.authorization;
-                if (!authorization) {
-                    return Promise.reject(new NetResponseError(403));
-                }
-                const token = authorization.slice('Bearer '.length);
-                try {
-                    const userInfo = atob(token).split('.');
-                    return Promise.resolve(
-                        updateContext(netRequest, {
-                            id: userInfo[0],
-                            token,
-                        }),
-                    );
-                } catch {
-                    return Promise.reject(
-                        new NetResponseError(400, {
-                            type: 'text',
-                            content: 'Invalid authorization token',
-                        }),
-                    );
-                }
-            }).get('/user-info', (netRequest) => {
+            new Router<unknown, UserContext>(
+                (netRequest: NetRequest<unknown>): Promise<NetRequest<unknown, UserContext>> => {
+                    const authorization = netRequest.headers.authorization;
+                    if (!authorization) {
+                        return Promise.reject(new NetResponseError(403));
+                    }
+                    const token = authorization.slice('Bearer '.length);
+                    try {
+                        const userInfo = atob(token).split('.');
+                        return Promise.resolve(
+                            updateContext(netRequest, {
+                                id: userInfo[0],
+                                token,
+                            }),
+                        );
+                    } catch {
+                        return Promise.reject(
+                            new NetResponseError(400, {
+                                type: 'text',
+                                content: 'Invalid authorization token',
+                            }),
+                        );
+                    }
+                },
+            ).get('/user-info', (netRequest) => {
                 return Promise.resolve({
                     body: {
                         type: 'json',
@@ -239,9 +241,13 @@ describe('Server API', () => {
                             return values;
                         })
                         .flat()
-                        .map((value) => typeof value === 'string' ? null : [value.filename, value.size, value.type])
+                        .map((value) =>
+                            typeof value === 'string'
+                                ? null
+                                : [value.filename, value.size, value.type],
+                        )
                         .filter(Boolean);
-                    
+
                     return Promise.resolve({
                         body: {
                             type: 'json',
@@ -557,11 +563,17 @@ describe('Server API', () => {
                 formData.append('first', 'value');
                 formData.append('second', 'value');
                 formData.append('second', 'value');
-                formData.append('file', new File(['0123456789'], 'text.txt', {type: 'text/plain'}));
-                const response = await fetch(`${ADDRESS}/body-router/path-with-form-data-with-file`, {
-                    method: 'POST',
-                    body: formData,
-                });
+                formData.append(
+                    'file',
+                    new File(['0123456789'], 'text.txt', { type: 'text/plain' }),
+                );
+                const response = await fetch(
+                    `${ADDRESS}/body-router/path-with-form-data-with-file`,
+                    {
+                        method: 'POST',
+                        body: formData,
+                    },
+                );
                 const result = await response.json();
                 assert.equal(response.status, 200);
                 assert.deepStrictEqual(result, [['text.txt', 10, 'text/plain']]);
@@ -645,24 +657,27 @@ describe('Server API', () => {
 
 type Info = {
     serverName: string;
-}
+};
 
 type ContextInfo = {
     info: string;
-}
+};
 
 describe('Server inside', () => {
     test('should make Global', async () => {
         const server = new Server<Info>(new http.Server(), {
             createFileLocation,
-            makeGlobal: () => Promise.resolve({
-                serverName: 'localhost'
-            }),
-        })
-            .addRouter('/global', new MiddlewarelessRouter<Info>().get('', async (netRequest) => {
-                assert.deepStrictEqual(netRequest.global, {serverName: 'localhost'});
+            makeGlobal: () =>
+                Promise.resolve({
+                    serverName: 'localhost',
+                }),
+        }).addRouter(
+            '/global',
+            new MiddlewarelessRouter<Info>().get('', async (netRequest) => {
+                assert.deepStrictEqual(netRequest.global, { serverName: 'localhost' });
                 return {};
-            }));
+            }),
+        );
 
         server.listen(PORT + 1);
 
@@ -678,11 +693,15 @@ describe('Server inside', () => {
         const server = new Server<unknown>(new http.Server(), {
             createFileLocation,
             makeGlobal: () => Promise.resolve(),
-        })
-            .addRouter('/context', new Router<unknown, ContextInfo>((netRequest) => Promise.resolve(updateContext(netRequest, {info: 'test'}))).get('', async (netRequest) => {
-                assert.deepStrictEqual(netRequest.context, {info: 'test'});
+        }).addRouter(
+            '/context',
+            new Router<unknown, ContextInfo>((netRequest) =>
+                Promise.resolve(updateContext(netRequest, { info: 'test' })),
+            ).get('', async (netRequest) => {
+                assert.deepStrictEqual(netRequest.context, { info: 'test' });
                 return {};
-            }));
+            }),
+        );
 
         server.listen(PORT + 2);
 
@@ -709,11 +728,15 @@ describe('Server inside', () => {
             createFileLocation,
             onRequestFinished,
             makeGlobal: () => Promise.resolve(),
-        })
-            .addRouter('/finish', new Router<unknown, ContextInfo>((netRequest) => Promise.resolve(updateContext(netRequest, {info: 'test'}))).get('', async (netRequest) => {
-                assert.deepStrictEqual(netRequest.context, {info: 'test'});
+        }).addRouter(
+            '/finish',
+            new Router<unknown, ContextInfo>((netRequest) =>
+                Promise.resolve(updateContext(netRequest, { info: 'test' })),
+            ).get('', async (netRequest) => {
+                assert.deepStrictEqual(netRequest.context, { info: 'test' });
                 return {};
-            }));
+            }),
+        );
 
         server.listen(PORT + 3);
 

@@ -7,7 +7,7 @@ describe('Pattern', () => {
         const pattern = new Pattern('/users');
         assert.deepStrictEqual(pattern.exec('/users'), { matched: '/users', groups: {} });
     });
-    
+
     test('should not match string', () => {
         const pattern = new Pattern('/users');
         assert.equal(pattern.exec('/notes'), null);
@@ -29,7 +29,10 @@ describe('Pattern', () => {
     test('should match with regexp', () => {
         const pattern = new Pattern('/users/*');
         assert.deepStrictEqual(pattern.exec('/users/'), { matched: '/users/', groups: {} });
-        assert.deepStrictEqual(pattern.exec('/users/12/notes/24'), { matched: '/users/12/notes/24', groups: {} });
+        assert.deepStrictEqual(pattern.exec('/users/12/notes/24'), {
+            matched: '/users/12/notes/24',
+            groups: {},
+        });
     });
 
     test('should not match with regexp', () => {
@@ -41,7 +44,10 @@ describe('Pattern', () => {
 
     test('should match with one group', () => {
         const pattern = new Pattern('/users/:user-id');
-        assert.deepStrictEqual(pattern.exec('/users/12'), { matched: '/users/12', groups: { 'user-id': '12' } });
+        assert.deepStrictEqual(pattern.exec('/users/12'), {
+            matched: '/users/12',
+            groups: { 'user-id': '12' },
+        });
     });
 
     test('should match with one group inside', () => {

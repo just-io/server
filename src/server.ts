@@ -32,9 +32,7 @@ export interface ServerSettings<Global> {
         netRequest?: NetRequest<Global>,
         netResponse?: NetResponse,
     ) => Promise<void>;
-    makeGlobal: (
-        request: http.IncomingMessage,
-    ) => Promise<Global>;
+    makeGlobal: (request: http.IncomingMessage) => Promise<Global>;
     typeParsers?: Record<string, ParserType>;
     bufferSize?: number;
     requestIdExtractor?: (request: http.IncomingMessage) => string;
@@ -50,9 +48,10 @@ const defaultTypeParsers: Record<string, ParserType> = {
 
 const DEFAULT_TYPE_PARSER: ParserType = 'buffer';
 const DEFAULT_BUFFER_SIZE: number = 1024;
-const DEFAULT_REQUEST_ID_EXTRACTOR = (request: http.IncomingMessage) => (Array.isArray(request.headers['x-request-id'])
-    ? request.headers['x-request-id'][0]
-    : request.headers['x-request-id']) ?? crypto.randomUUID();
+const DEFAULT_REQUEST_ID_EXTRACTOR = (request: http.IncomingMessage) =>
+    (Array.isArray(request.headers['x-request-id'])
+        ? request.headers['x-request-id'][0]
+        : request.headers['x-request-id']) ?? crypto.randomUUID();
 
 export class Server<Global> {
     #routerEntries: [prefix: RegExp, router: Router<Global, unknown>][] = [];
@@ -75,11 +74,13 @@ export class Server<Global> {
         this.#httpServer.on('request', (request, response) => {
             const promise = this.#handle(request, response);
             this.#handlingPromises.add(promise);
-            promise.then(() => {
-                this.#handlingPromises.delete(promise);
-            }).catch(() => {
-                this.#handlingPromises.delete(promise);
-            })
+            promise
+                .then(() => {
+                    this.#handlingPromises.delete(promise);
+                })
+                .catch(() => {
+                    this.#handlingPromises.delete(promise);
+                });
         });
         this.#parsers = {
             'form-data': new FormDataBodyParser(this.#settings.createFileLocation),
@@ -165,10 +166,7 @@ export class Server<Global> {
         });
     }
 
-    #sendNetResponse(
-        response: http.ServerResponse,
-        netResponse: NetResponse,
-    ): Promise<NetResponse> {
+    #sendNetResponse(response: http.ServerResponse, netResponse: NetResponse): Promise<void> {
         return new Promise((res) => {
             response.statusCode = netResponse.status ?? 200;
             if (netResponse.headers) {
@@ -266,25 +264,29 @@ export class Server<Global> {
                 }
             }
 
+            if (netResponse.flushHeaders) {
+                response.flushHeaders();
+            }
+
             switch (netResponse.body?.type) {
                 case 'text': {
                     this.#writeContentToStream(response, netResponse.body.content).then(() => {
                         response.end();
-                        res(netResponse);
+                        res();
                     });
                     break;
                 }
                 case 'json': {
                     this.#writeContentToStream(response, stringifyJson!).then(() => {
                         response.end();
-                        res(netResponse);
+                        res();
                     });
                     break;
                 }
                 case 'buffer': {
                     this.#writeContentToStream(response, netResponse.body.content).then(() => {
                         response.end();
-                        res(netResponse);
+                        res();
                     });
                     break;
                 }
@@ -292,7 +294,7 @@ export class Server<Global> {
                     netResponse.body.content.pipe(response);
                     netResponse.body.content.on('end', () => {
                         response.end();
-                        res(netResponse);
+                        res();
                     });
                     break;
                 }
@@ -301,75 +303,77 @@ export class Server<Global> {
                         this.#writeContentToStream(response, netResponse.body.content.buffer).then(
                             () => {
                                 response.end();
-                                res(netResponse);
+                                res();
                             },
                         );
                     } else if (netResponse.body.content.type === 'text') {
                         this.#writeContentToStream(response, netResponse.body.content.content).then(
                             () => {
                                 response.end();
-                                res(netResponse);
+                                res();
                             },
                         );
                     } else {
                         netResponse.body.content.stream.pipe(response);
                         netResponse.body.content.stream.on('end', () => {
                             response.end();
-                            res(netResponse);
+                            res();
                         });
                     }
                     break;
                 }
                 default: {
                     response.end();
-                    res(netResponse);
+                    res();
                     break;
                 }
             }
         });
     }
 
-    #compouseNetRequest(request: http.IncomingMessage, abortSignal: AbortSignal): Promise<NetRequest<Global>> {
-        return this.#settings.makeGlobal(request)
-            .then((global) => {
-                let cookies: Record<string, string> | undefined;
+    #compouseNetRequest(
+        request: http.IncomingMessage,
+        abortSignal: AbortSignal,
+    ): Promise<NetRequest<Global>> {
+        return this.#settings.makeGlobal(request).then((global) => {
+            let cookies: Record<string, string> | undefined;
 
-                const netRequest: NetRequest<Global> = {
-                    method: request.method as string,
-                    url: new URL(request.url ?? '', `http://${request.headers.host}`),
-                    headers: request.headers,
-                    get cookies(): Record<string, string> {
-                        if (cookies) {
-                            return cookies;
-                        }
-                        const cookie = request.headers.cookie;
-                        cookies = !cookie
-                            ? {}
-                            : cookie.split('; ').reduce(
-                                  (cookieAcc, str) => {
-                                      const [, key, value] = str.match(/(.+)=(.+)/) ?? [];
-                                      cookieAcc[key] = value;
-                                      return cookieAcc;
-                                  },
-                                  {} as Record<string, string>,
-                              );
+            const netRequest: NetRequest<Global> = {
+                method: request.method as string,
+                url: new URL(request.url ?? '', `http://${request.headers.host}`),
+                headers: request.headers,
+                get cookies(): Record<string, string> {
+                    if (cookies) {
                         return cookies;
-                    },
-                    id: (this.#settings.requestIdExtractor ?? DEFAULT_REQUEST_ID_EXTRACTOR)(request),
-                    startedAt: Date.now(),
-                    body: null,
-                    pathname: {
-                        router: '',
-                        handler: '',
-                        groups: {},
-                    },
-                    abortSignal,
-                    context: {} as Record<string, unknown>,
-                    global,
-                };
-        
-                return netRequest;
-            });
+                    }
+                    const cookie = request.headers.cookie;
+                    cookies = !cookie
+                        ? {}
+                        : cookie.split('; ').reduce(
+                              (cookieAcc, str) => {
+                                  const [, key, value] = str.match(/(.+)=(.+)/) ?? [];
+                                  cookieAcc[key] = value;
+                                  return cookieAcc;
+                              },
+                              {} as Record<string, string>,
+                          );
+                    return cookies;
+                },
+                id: (this.#settings.requestIdExtractor ?? DEFAULT_REQUEST_ID_EXTRACTOR)(request),
+                startedAt: Date.now(),
+                body: null,
+                pathname: {
+                    router: '',
+                    handler: '',
+                    groups: {},
+                },
+                abortSignal,
+                context: {} as Record<string, unknown>,
+                global,
+            };
+
+            return netRequest;
+        });
     }
 
     async #cleanup(netRequest?: NetRequest<Global>): Promise<void> {
@@ -400,10 +404,7 @@ export class Server<Global> {
             );
         }
         if (netRequest && this.#settings.onCreatedNetResponse) {
-            await this.#settings.onCreatedNetResponse(
-                netRequest,
-                netResponse,
-            );
+            await this.#settings.onCreatedNetResponse(netRequest, netResponse);
         }
         requestProcessingInfo.periods.sending = Period.make();
         await this.#sendNetResponse(response, netResponse);
@@ -556,12 +557,14 @@ export class Server<Global> {
             requestProcessingInfo.periods.handling = Period.make();
             if (info.handler.options?.timeout) {
                 netResponse = await Promise.race([
-                    matchedRouter.router.callHandler(info, netRequest)
+                    matchedRouter.router
+                        .callHandler(info, netRequest)
                         // eslint-disable-next-line @typescript-eslint/no-shadow
                         .then((netResponse) => {
                             Period.end(requestProcessingInfo.periods.handling!);
                             if (matchedRouter.router.onCreatedNetResponse) {
-                                return matchedRouter.router.onCreatedNetResponse(netRequest, netResponse)
+                                return matchedRouter.router
+                                    .onCreatedNetResponse(netRequest, netResponse)
                                     .then(() => {
                                         return netResponse;
                                     });
@@ -606,16 +609,24 @@ export class Server<Global> {
             this.#abortControllers.delete(abortController);
         }
 
-        return this.#finishRequest(request, response, requestProcessingInfo, false, netRequest, netResponse)
-            .then(() => {
-                request.socket.off('close', onSocketClose);
-            });
+        return this.#finishRequest(
+            request,
+            response,
+            requestProcessingInfo,
+            false,
+            netRequest,
+            netResponse,
+        ).then(() => {
+            request.socket.off('close', onSocketClose);
+        });
     }
 }
 
-
 export class GloballessServer extends Server<unknown> {
-    constructor(httpServer: http.Server, serverSettings: Omit<ServerSettings<unknown>, 'makeGlobal'>) {
-        super(httpServer, {...serverSettings, makeGlobal: () => Promise.resolve()});
+    constructor(
+        httpServer: http.Server,
+        serverSettings: Omit<ServerSettings<unknown>, 'makeGlobal'>,
+    ) {
+        super(httpServer, { ...serverSettings, makeGlobal: () => Promise.resolve() });
     }
 }
