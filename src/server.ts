@@ -248,7 +248,7 @@ export class Server<Global> {
                     } else if (netResponse.body.content.type === 'text') {
                         response.setHeader(
                             'content-length',
-                            netResponse.body.content.content.length,
+                            Buffer.byteLength(netResponse.body.content.content, 'utf8'),
                         );
                     } else {
                         response.setHeader('content-length', netResponse.body.content.length);
@@ -351,8 +351,10 @@ export class Server<Global> {
                         ? {}
                         : cookie.split('; ').reduce(
                               (cookieAcc, str) => {
-                                  const [, key, value] = str.match(/(.+)=(.+)/) ?? [];
-                                  cookieAcc[key] = value;
+                                  const [, key, value] = str.match(/(.+)=(.*)/) ?? [];
+                                  if (key) {
+                                      cookieAcc[key] = value;
+                                  }
                                   return cookieAcc;
                               },
                               {} as Record<string, string>,
@@ -502,10 +504,12 @@ export class Server<Global> {
             }
         }
 
+        const [contentType] =
+            request.headers['content-type']?.split(';').map((value) => value.trim()) ?? [];
+
         if (
             info.handler.options?.acceptContentTypes &&
-            (!request.headers['content-type'] ||
-                !info.handler.options.acceptContentTypes.includes(request.headers['content-type']))
+            (!contentType || !info.handler.options.acceptContentTypes.includes(contentType))
         ) {
             requestProcessingInfo.finishedReason = 'not-acceptable';
             return this.#finishRequest(

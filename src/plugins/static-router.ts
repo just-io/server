@@ -24,7 +24,7 @@ export default class StaticRouter<Global, Context = Record<string, unknown>> ext
 
             const location = path.join(this.fullPathToFolder, filename);
 
-            if (!location.startsWith(this.fullPathToFolder)) {
+            if (!location.startsWith(this.fullPathToFolder + path.sep)) {
                 return Promise.reject(
                     new NetResponseError(403, { type: 'text', content: 'Forbidden' }),
                 );

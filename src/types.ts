@@ -3,6 +3,27 @@ import { Readable } from 'node:stream';
 import { ExtractGroups } from './components/pattern';
 import { PeriodData } from './components/period';
 
+export type JSONValue =
+    | string
+    | null
+    | number
+    | boolean
+    | JSONValue[]
+    | { [key: string]: JSONValue };
+
+export type JSONResponses = {
+    [key: number]: JSONValue;
+};
+
+export type JSONNetResponseValues<R extends JSONResponses> = {
+    [S in keyof R]: {
+        status: S & number;
+        value: R[S & number];
+        headers?: http.OutgoingHttpHeaders;
+        cookies?: Cookie[];
+    };
+}[keyof R];
+
 export interface FileLocation {
     writeStream: {
         write(chunk: Buffer): void;
@@ -46,7 +67,7 @@ export type NetRequestBody =
       }
     | {
           type: 'json';
-          content: unknown;
+          content: JSONValue;
       };
 
 export interface NetRequest<
@@ -110,7 +131,7 @@ export type NetResponseBody =
       }
     | {
           type: 'json';
-          content: unknown;
+          content: JSONValue;
       };
 
 export type Cookie = {

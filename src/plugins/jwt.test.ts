@@ -5,7 +5,7 @@ import { decode, encode, verify, check } from './jwt';
 const PRIVATE_KEY = 'private-key';
 
 const TOKEN =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNCJ9.Tn8GSpME+axL6x6Bcgw+sh72DvD/jNzsVgDGrmnMk1A=';
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyNCJ9.Tn8GSpME-axL6x6Bcgw-sh72DvD_jNzsVgDGrmnMk1A';
 const INVALID_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.iyJ1c2VySWQiOiIyNCJ9.Tn8GSpME+axL6x6Bcgw+sh72DvD/jNzsVgDGrmnMk1A=';
 
@@ -14,7 +14,9 @@ describe('JWT', () => {
         test('should return valid token with string', () => {
             const token = encode('{"userId":"24"}', PRIVATE_KEY);
             assert.equal(token, TOKEN);
-            const [head, body] = token.split('.').map((value) => atob(value));
+            const [head, body] = token
+                .split('.')
+                .map((value) => Buffer.from(value, 'base64url').toString());
             assert.deepStrictEqual(JSON.parse(head), {
                 alg: 'HS256',
                 typ: 'JWT',
@@ -25,7 +27,9 @@ describe('JWT', () => {
         test('should return valid token with object', () => {
             const token = encode({ userId: '24' }, PRIVATE_KEY);
             assert.equal(token, TOKEN);
-            const [head, body] = token.split('.').map((value) => atob(value));
+            const [head, body] = token
+                .split('.')
+                .map((value) => Buffer.from(value, 'base64url').toString());
             assert.deepStrictEqual(JSON.parse(head), {
                 alg: 'HS256',
                 typ: 'JWT',

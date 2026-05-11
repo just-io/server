@@ -14,9 +14,7 @@ export default class BufferBodyParser extends BodyParser {
     parse(request: http.IncomingMessage): Promise<NetRequestBody | null> {
         return new Promise((res, rej) => {
             const fileLocation = this.#createNewFileLocation();
-            const chunks: Buffer[] = [];
             request.on('data', (chunk: Buffer) => {
-                chunks.push(chunk);
                 fileLocation.writeStream.write(chunk);
             });
             request.on('end', () => {

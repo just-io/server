@@ -167,29 +167,6 @@ export class Router<Global, Context> {
         return this.addHandler('TRACE', pattern, routeHandler);
     }
 
-    handle(
-        method: HTTPMethod,
-        pathname: string,
-        request: NetRequest<Global, Record<string, unknown>>,
-    ): Promise<NetResponse | null> {
-        for (const handlerInfo of this.#handlerInfos) {
-            if (handlerInfo.method !== '*' && handlerInfo.method !== method) {
-                continue;
-            }
-            const result = handlerInfo.pattern.exec(pathname);
-            if (result) {
-                request.pathname.handler = result.matched;
-                request.pathname.groups = result.groups;
-
-                return this.#middleware
-                    .handle(request)
-                    .then((netRequest) => handlerInfo.handler.handle(netRequest));
-            }
-        }
-
-        return Promise.resolve(null);
-    }
-
     getHandlerInfo(
         method: HTTPMethod,
         pathname: string,

@@ -6,3 +6,5 @@ export * from './types';
 export * from './plugins/files';
 export * from './plugins/layout';
 export * from './plugins/jwt';
+export * from './plugins/json-handler';
+export * from './plugins/static-router';
