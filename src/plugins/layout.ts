@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import { NetResponse } from '../types';
 
 export type CSPPolicyDirectiveType =
@@ -20,13 +22,8 @@ export type CSPPolicyDirectiveSchema =
 
 export type CSPPolicy = [
     CSPPolicyDirectiveType,
-    ...(
-        | CSPPolicyDirectiveSchema
-        | `http:${string}`
-        | `https:${string}`
-        | `ws:${string}`
-        | `blob:`
-    )[],
+    CSPPolicyDirectiveSchema,
+    ...(`http:${string}` | `https:${string}` | `ws:${string}` | `blob:`)[],
 ];
 
 export type LayoutOptions = {
@@ -51,7 +48,7 @@ export type LayoutOptions = {
     bodyClasses?: string[];
 };
 
-export function renderLayout(options: Exclude<LayoutOptions, 'csp'>, nonce: string): string {
+export function renderLayout(options: Omit<LayoutOptions, 'csp'>, nonce: string): string {
     return `
 <!DOCTYPE html>
 <html lang="${options.lang ?? 'en'}" style="min-height: 100vh;">
@@ -116,7 +113,7 @@ export function makeLayout(options: LayoutOptions): {
             'content-security-policy': [`script-src 'nonce-${nonce}'`]
                 .concat(
                     options.csp?.policies.map(
-                        ([type, ...schemas]) => `'${type}' ${schemas.join(' ')}`,
+                        ([type, schema, ...schemas]) => `${type} '${schema}' ${schemas.join(' ')}`,
                     ) ?? [],
                 )
                 .join('; '),

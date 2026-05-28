@@ -19,7 +19,7 @@ export default class StaticRouter<Global, Context = Record<string, unknown>> ext
         super(middleware, defaultOptions);
         this.fullPathToFolder = path.join(pathToFolder);
 
-        this.addHandler('GET', ':filename', (request): Promise<NetResponse> => {
+        this.addHandler('GET', '/:filename', (request): Promise<NetResponse> => {
             const filename = request.pathname.handler;
 
             const location = path.join(this.fullPathToFolder, filename);

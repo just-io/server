@@ -480,8 +480,8 @@ export class Server<Global> {
         const [info, result] = handlerInfo;
         requestProcessingInfo.handler = info.handler.name ?? info.path;
         if (info.handler.options?.maxContentLength !== undefined) {
-            requestProcessingInfo.finishedReason = 'length-required';
             if (!request.headers['content-length']) {
+                requestProcessingInfo.finishedReason = 'length-required';
                 return this.#finishRequest(
                     request,
                     response,
