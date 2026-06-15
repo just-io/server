@@ -351,7 +351,7 @@ export class Server<Global> {
                         ? {}
                         : cookie.split('; ').reduce(
                               (cookieAcc, str) => {
-                                  const [, key, value] = str.match(/(.+)=(.*)/) ?? [];
+                                  const [, key, value] = str.match(/^([^=]+)=(.*)/) ?? [];
                                   if (key) {
                                       cookieAcc[key] = value;
                                   }
@@ -527,6 +527,7 @@ export class Server<Global> {
             const shouldAbort = await info.handler.options.shouldAbort(request);
             Period.end(requestProcessingInfo.periods.shouldAbortChecking);
             if (shouldAbort) {
+                requestProcessingInfo.finishedReason = 'too-many-requests';
                 return this.#finishRequest(
                     request,
                     response,
@@ -578,6 +579,7 @@ export class Server<Global> {
                     new Promise<NetResponse>((res) =>
                         setTimeout(
                             () => {
+                                Period.end(requestProcessingInfo.periods.handling!);
                                 res(
                                     new NetResponseError(504, {
                                         type: 'text',

@@ -18,6 +18,9 @@ class Reader {
     }
 
     get left(): number {
+        if (!this.#chunks[this.#currentChunk]) {
+            return 0;
+        }
         return this.#chunks
             .slice(this.#currentChunk + 1)
             .reduce(
@@ -305,6 +308,9 @@ export class Collector {
                     };
                 }
                 break;
+            }
+            case 'finished': {
+                return;
             }
         }
         return this.#process(force);
