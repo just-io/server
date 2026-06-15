@@ -167,7 +167,7 @@ export class Server<Global> {
     }
 
     #sendNetResponse(response: http.ServerResponse, netResponse: NetResponse): Promise<void> {
-        return new Promise((res) => {
+        return new Promise((res, rej) => {
             response.statusCode = netResponse.status ?? 200;
             if (netResponse.headers) {
                 Object.entries(netResponse.headers).forEach(([key, value]) => {
@@ -293,8 +293,11 @@ export class Server<Global> {
                 case 'stream': {
                     netResponse.body.content.pipe(response);
                     netResponse.body.content.on('end', () => {
-                        response.end();
                         res();
+                    });
+                    netResponse.body.content.on('error', (err) => {
+                        response.destroy(err);
+                        rej(err);
                     });
                     break;
                 }
@@ -316,8 +319,11 @@ export class Server<Global> {
                     } else {
                         netResponse.body.content.stream.pipe(response);
                         netResponse.body.content.stream.on('end', () => {
-                            response.end();
                             res();
+                        });
+                        netResponse.body.content.stream.on('error', (err) => {
+                            response.destroy(err);
+                            rej(err);
                         });
                     }
                     break;

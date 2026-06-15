@@ -112,7 +112,11 @@ type CollectorState =
           value: ValueInfo;
       }
     | {
-          state: 'reading-file';
+          state: 'reading-file-header';
+          file: FileInfo;
+      }
+    | {
+          state: 'reading-file-content';
           file: FileInfo;
       }
     | {
@@ -220,7 +224,7 @@ export class Collector {
                 if (filename) {
                     const fileLocation = this.#createNewFileLocation();
                     this.#state = {
-                        state: 'reading-file',
+                        state: 'reading-file-header',
                         file: {
                             type: '',
                             name,
@@ -264,7 +268,7 @@ export class Collector {
                 }
                 break;
             }
-            case 'reading-file': {
+            case 'reading-file-header': {
                 this.#readEmpty();
                 const line = this.#readLine();
                 const matched = line.match(/Content-Type: (.+)/i);
@@ -275,6 +279,13 @@ export class Collector {
                 this.#state.file.type = type;
                 this.#readEmpty();
                 this.#readEmpty();
+                this.#state = {
+                    state: 'reading-file-content',
+                    file: this.#state.file,
+                };
+                break;
+            }
+            case 'reading-file-content': {
                 const content = this.#readWhileNotEnds(this.#boundary);
                 if (this.#reader.left < this.#boundary.length) {
                     this.#state.file.fileLocation.writeStream.write(content);

@@ -30,7 +30,7 @@ ${boundary}
 Content-Disposition: form-data; name="AttachedFiles"; filename="text1.txt"
 Content-Type: text/plain
 
-1234567890
+${'0'.repeat(256)}
 ${boundary}
 Content-Disposition: form-data; name="AttachedFiles"; filename="text2.txt"
 Content-Type: text/plain
@@ -121,7 +121,7 @@ describe('Collector', () => {
                 {
                     filename: 'text1.txt',
                     location: '/temp/0',
-                    size: 10,
+                    size: 256,
                     type: 'text/plain',
                 },
                 {
@@ -142,7 +142,7 @@ describe('Collector', () => {
         });
 
         assert.deepStrictEqual(files, [
-            `1234567890`,
+            '0'.repeat(256),
             `0987654321`,
             `HiHiHi--Asrf456B
 --Asrf456B
