@@ -150,7 +150,11 @@ export class Server<Global> {
             chunks.push(content.slice(i, i + size));
         }
 
-        return new Promise((res) => {
+        return new Promise((res, rej) => {
+            stream.on('error', () => {
+                rej();
+            });
+
             function write() {
                 if (chunks.length === 0) {
                     res();
@@ -183,7 +187,7 @@ export class Server<Global> {
                     netResponse.cookies.map((cookie) => {
                         let cookieValue = `${cookie.key}=${cookie.value}`;
                         if (cookie.expires) {
-                            cookieValue += `; Expires=${cookie.expires.toString().split('+')[0]}`;
+                            cookieValue += `; Expires=${cookie.expires.toUTCString()}`;
                         }
                         if (cookie.maxAge) {
                             cookieValue += `; Max-Age=${cookie.maxAge}`;
@@ -270,24 +274,30 @@ export class Server<Global> {
 
             switch (netResponse.body?.type) {
                 case 'text': {
-                    this.#writeContentToStream(response, netResponse.body.content).then(() => {
-                        response.end();
-                        res();
-                    });
+                    this.#writeContentToStream(response, netResponse.body.content)
+                        .then(() => {
+                            response.end();
+                            res();
+                        })
+                        .catch(rej);
                     break;
                 }
                 case 'json': {
-                    this.#writeContentToStream(response, stringifyJson!).then(() => {
-                        response.end();
-                        res();
-                    });
+                    this.#writeContentToStream(response, stringifyJson!)
+                        .then(() => {
+                            response.end();
+                            res();
+                        })
+                        .catch(rej);
                     break;
                 }
                 case 'buffer': {
-                    this.#writeContentToStream(response, netResponse.body.content).then(() => {
-                        response.end();
-                        res();
-                    });
+                    this.#writeContentToStream(response, netResponse.body.content)
+                        .then(() => {
+                            response.end();
+                            res();
+                        })
+                        .catch(rej);
                     break;
                 }
                 case 'stream': {
@@ -296,33 +306,31 @@ export class Server<Global> {
                         res();
                     });
                     netResponse.body.content.on('error', (err) => {
-                        response.destroy(err);
                         rej(err);
                     });
                     break;
                 }
                 case 'file': {
                     if (netResponse.body.content.type === 'buffer') {
-                        this.#writeContentToStream(response, netResponse.body.content.buffer).then(
-                            () => {
+                        this.#writeContentToStream(response, netResponse.body.content.buffer)
+                            .then(() => {
                                 response.end();
                                 res();
-                            },
-                        );
+                            })
+                            .catch(rej);
                     } else if (netResponse.body.content.type === 'text') {
-                        this.#writeContentToStream(response, netResponse.body.content.content).then(
-                            () => {
+                        this.#writeContentToStream(response, netResponse.body.content.content)
+                            .then(() => {
                                 response.end();
                                 res();
-                            },
-                        );
+                            })
+                            .catch(rej);
                     } else {
                         netResponse.body.content.stream.pipe(response);
                         netResponse.body.content.stream.on('end', () => {
                             res();
                         });
                         netResponse.body.content.stream.on('error', (err) => {
-                            response.destroy(err);
                             rej(err);
                         });
                     }
@@ -415,7 +423,13 @@ export class Server<Global> {
             await this.#settings.onCreatedNetResponse(netRequest, netResponse);
         }
         requestProcessingInfo.periods.sending = Period.make();
-        await this.#sendNetResponse(response, netResponse);
+        try {
+            await this.#sendNetResponse(response, netResponse);
+        } catch (err) {
+            requestProcessingInfo.finishedReason = 'error';
+            response.destroy(err as Error);
+            response.end();
+        }
         Period.end(requestProcessingInfo.periods.sending);
         if (destroy) {
             request.destroy();
@@ -585,6 +599,9 @@ export class Server<Global> {
                     new Promise<NetResponse>((res) =>
                         setTimeout(
                             () => {
+                                if (requestProcessingInfo.periods.handling?.[1]) {
+                                    return;
+                                }
                                 Period.end(requestProcessingInfo.periods.handling!);
                                 res(
                                     new NetResponseError(504, {

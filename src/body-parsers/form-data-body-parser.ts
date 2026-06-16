@@ -40,13 +40,24 @@ class Reader {
         }
     }
 
-    test(length = 1): Buffer {
+    test(length = 1, offset = 0): Buffer {
         const slices: Buffer[] = [];
         let total = 0;
         let currentChunk = this.#currentChunk;
         let position = this.#currentChunkPosition;
         if (!this.#chunks[this.#currentChunk]) {
             return Buffer.alloc(0);
+        }
+        for (let i = 0; i < offset; i++) {
+            if (position + 1 === this.#chunks[currentChunk].length) {
+                position = 0;
+                currentChunk += 1;
+            } else {
+                position += 1;
+            }
+            if (!this.#chunks[currentChunk]) {
+                return Buffer.alloc(0);
+            }
         }
         while (total < length) {
             const slice = this.#chunks[currentChunk].subarray(position, position + length - total);
@@ -63,6 +74,32 @@ class Reader {
             }
         }
         return Buffer.concat(slices);
+    }
+
+    findOffset(buffer: Buffer): number {
+        let slice: Buffer = Buffer.alloc(0);
+        let currentChunk = this.#currentChunk;
+        let position = this.#currentChunkPosition;
+        let offset = 0;
+        while (this.#chunks[currentChunk]) {
+            const s = this.#chunks[currentChunk].subarray(position, position + 1);
+            if (slice.length < buffer.length) {
+                slice = Buffer.concat([slice, s]);
+            } else {
+                slice = Buffer.concat([slice.subarray(1), s]);
+            }
+            if (1 + position === this.#chunks[currentChunk].length) {
+                position = 0;
+                currentChunk += 1;
+            } else {
+                position += 1;
+            }
+            offset += 1;
+            if (Buffer.compare(slice, buffer) === 0) {
+                return offset - buffer.length;
+            }
+        }
+        return -1;
     }
 
     read(length = 1): Buffer {
@@ -90,6 +127,21 @@ class Reader {
             if (!this.#chunks[this.#currentChunk]) {
                 break;
             }
+        }
+        this.#position += total;
+
+        return Buffer.concat(slices);
+    }
+
+    readRest(): Buffer {
+        const slices: Buffer[] = [];
+        let total = 0;
+        while (this.#chunks[this.#currentChunk]) {
+            const slice = this.#chunks[this.#currentChunk].subarray(this.#currentChunkPosition);
+            slices.push(slice);
+            total += slice.length;
+            this.#currentChunkPosition = 0;
+            this.#currentChunk += 1;
         }
         this.#position += total;
 
@@ -344,24 +396,15 @@ export class Collector {
     }
 
     #readWhileNotEnds(str: Buffer): Buffer {
-        let buffer: Buffer = Buffer.alloc(0);
-        while (true) {
-            if (this.#reader.left <= str.length) {
-                buffer = Buffer.concat([buffer, this.#reader.read()]);
-                break;
-            }
-            const ends = this.#reader.test(str.length);
-            if (ends && ends.compare(str) !== 0) {
-                buffer = Buffer.concat([buffer, this.#reader.read()]);
-            } else {
-                break;
-            }
+        const offset = this.#reader.findOffset(str);
+        if (offset === -1) {
+            return this.#reader.readRest();
         }
-        return buffer;
+        return this.#reader.read(offset);
     }
 
     #readLine(): string {
-        let buffer: Buffer = Buffer.alloc(0);
+        const buffers: Buffer[] = [];
         while (true) {
             const symb = this.#reader.test();
             if (
@@ -369,12 +412,12 @@ export class Collector {
                 Collector.#rBuffer.compare(symb) !== 0 &&
                 Collector.#nBuffer.compare(symb) !== 0
             ) {
-                buffer = Buffer.concat([buffer, this.#reader.read()]);
+                buffers.push(this.#reader.read());
             } else {
                 break;
             }
         }
-        return buffer.toString('utf8');
+        return Buffer.concat(buffers).toString('utf8');
     }
 }
 

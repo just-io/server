@@ -35,6 +35,11 @@ ${boundary}
 Content-Disposition: form-data; name="AttachedFiles"; filename="text2.txt"
 Content-Type: text/plain
 
+${'0123'.repeat(1024 * 1024)}
+${boundary}
+Content-Disposition: form-data; name="AttachedFiles"; filename="text3.txt"
+Content-Type: text/plain
+
 0987654321
 ${boundary}
 Content-Disposition: form-data; name="TestFile"; filename="file-test.txt"
@@ -61,7 +66,7 @@ mad-vasya@example.com`;
 
 describe('Collector', () => {
     test('collect', () => {
-        const parts = str.split(/(.{32})/).filter(Boolean);
+        const parts = str.split(/(.{1024})/).filter(Boolean);
 
         const files: string[] = [];
 
@@ -97,7 +102,7 @@ describe('Collector', () => {
             };
         }
 
-        const collector = new Collector(Buffer.from(boundary), 128, create);
+        const collector = new Collector(Buffer.from(boundary), 2048, create);
         parts.forEach((part) => {
             collector.collect(Buffer.from(part));
         });
@@ -127,6 +132,12 @@ describe('Collector', () => {
                 {
                     filename: 'text2.txt',
                     location: '/temp/1',
+                    size: 4 * 1024 * 1024,
+                    type: 'text/plain',
+                },
+                {
+                    filename: 'text3.txt',
+                    location: '/temp/2',
                     size: 10,
                     type: 'text/plain',
                 },
@@ -134,7 +145,7 @@ describe('Collector', () => {
             TestFile: [
                 {
                     filename: 'file-test.txt',
-                    location: '/temp/2',
+                    location: '/temp/3',
                     size: 94,
                     type: 'text/plain',
                 },
@@ -143,6 +154,7 @@ describe('Collector', () => {
 
         assert.deepStrictEqual(files, [
             '0'.repeat(256),
+            '0123'.repeat(1024 * 1024),
             `0987654321`,
             `HiHiHi--Asrf456B
 --Asrf456B
@@ -191,7 +203,7 @@ describe('Collector', () => {
             };
         }
 
-        const collector = new Collector(Buffer.from(boundary), 128, create);
+        const collector = new Collector(Buffer.from(boundary), 1024, create);
         assert.throws(() => {
             parts.forEach((part) => {
                 collector.collect(Buffer.from(part));

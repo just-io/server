@@ -51,7 +51,11 @@ export function decode<T>(token: string, toJson?: true): T | string {
 
 export function verify(token: string, privateKey: string): boolean {
     const [head64, body64, sign64] = token.split('.');
-    return sign(head64, body64, privateKey) === sign64;
+    const tokenBuffer = Buffer.from(sign(head64, body64, privateKey));
+    const signBuffer = Buffer.from(sign64);
+    return (
+        tokenBuffer.length === signBuffer.length && crypto.timingSafeEqual(tokenBuffer, signBuffer)
+    );
 }
 
 type CheckResult<T> =
@@ -66,7 +70,12 @@ export function check<T>(
     toJson?: true,
 ): CheckResult<string | T> {
     const [head64, body64, sign64] = token.split('.');
-    if (sign(head64, body64, privateKey) !== sign64) {
+    const tokenBuffer = Buffer.from(sign(head64, body64, privateKey));
+    const signBuffer = Buffer.from(sign64);
+    if (
+        tokenBuffer.length !== signBuffer.length ||
+        !crypto.timingSafeEqual(tokenBuffer, signBuffer)
+    ) {
         return { ok: false, error: 'invalid-sign' };
     }
     try {
