@@ -65,7 +65,7 @@ Content-Dispossition: form-data; name="DestAddress"
 mad-vasya@example.com`;
 
 describe('Collector', () => {
-    test('collect', () => {
+    test('collect', async () => {
         const parts = str.split(/(.{1024})/).filter(Boolean);
 
         const files: string[] = [];
@@ -106,7 +106,9 @@ describe('Collector', () => {
         parts.forEach((part) => {
             collector.collect(Buffer.from(part));
         });
-        const result = collector.end();
+        const result = await collector.end();
+
+        console.log(result);
 
         assert.ok(typeof result.fileLocations === 'object' && result.fileLocations !== null);
         assert.ok(result.fileLocations['/temp/0'].location === '/temp/0');
@@ -204,11 +206,11 @@ describe('Collector', () => {
         }
 
         const collector = new Collector(Buffer.from(boundary), 1024, create);
-        assert.throws(() => {
+        assert.rejects(async () => {
             parts.forEach((part) => {
                 collector.collect(Buffer.from(part));
             });
-            collector.end();
+            await collector.end();
         });
     });
 });

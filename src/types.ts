@@ -27,7 +27,7 @@ export type JSONNetResponseValues<R extends JSONResponses> = {
 export interface FileLocation {
     writeStream: {
         write(chunk: Buffer): void;
-        end(): void;
+        end(cb?: () => void): void;
     };
     readStream: {
         read(size: number): Buffer | null;

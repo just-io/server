@@ -18,10 +18,11 @@ export default class BufferBodyParser extends BodyParser {
                 fileLocation.writeStream.write(chunk);
             });
             request.on('end', () => {
-                fileLocation.writeStream.end();
-                res({
-                    type: 'buffer',
-                    fileLocation,
+                fileLocation.writeStream.end(() => {
+                    res({
+                        type: 'buffer',
+                        fileLocation,
+                    });
                 });
             });
             request.on('error', rej);

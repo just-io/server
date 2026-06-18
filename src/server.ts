@@ -423,15 +423,16 @@ export class Server<Global> {
             await this.#settings.onCreatedNetResponse(netRequest, netResponse);
         }
         requestProcessingInfo.periods.sending = Period.make();
+        let destroyed = false;
         try {
             await this.#sendNetResponse(response, netResponse);
         } catch (err) {
             requestProcessingInfo.finishedReason = 'error';
             response.destroy(err as Error);
-            response.end();
+            destroyed = true;
         }
         Period.end(requestProcessingInfo.periods.sending);
-        if (destroy) {
+        if (destroy && !destroyed) {
             request.destroy();
         }
         Period.end(requestProcessingInfo.periods.total);
@@ -586,11 +587,17 @@ export class Server<Global> {
                         .callHandler(info, netRequest)
                         // eslint-disable-next-line @typescript-eslint/no-shadow
                         .then((netResponse) => {
+                            if (requestProcessingInfo.finishedReason === 'timeout') {
+                                return;
+                            }
                             Period.end(requestProcessingInfo.periods.handling!);
                             if (matchedRouter.router.onCreatedNetResponse) {
                                 return matchedRouter.router
                                     .onCreatedNetResponse(netRequest, netResponse)
                                     .then(() => {
+                                        if (requestProcessingInfo.finishedReason === 'timeout') {
+                                            return;
+                                        }
                                         return netResponse;
                                     });
                             }

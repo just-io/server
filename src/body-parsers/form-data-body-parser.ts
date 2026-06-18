@@ -219,12 +219,20 @@ export class Collector {
         this.#process();
     }
 
-    end(): { fileLocations: Record<string, FileLocation>; formValues: FormValues } {
+    end(): Promise<{ fileLocations: Record<string, FileLocation>; formValues: FormValues }> {
         this.#process(true);
-        return {
-            fileLocations: this.#fileLocations,
-            formValues: this.#formValues,
-        };
+
+        return Promise.all(
+            Object.values(this.#fileLocations).map(
+                (fileLocation) =>
+                    new Promise<void>((resolve) => fileLocation.writeStream.end(resolve)),
+            ),
+        ).then(() => {
+            return {
+                fileLocations: this.#fileLocations,
+                formValues: this.#formValues,
+            };
+        });
     }
 
     #cutLastNewLineSymbols(buffer: Buffer): Buffer {
@@ -446,32 +454,33 @@ export default class FormDataBodyParser extends BodyParser {
                 boundary.length * 10,
                 this.#createNewFileLocation,
             );
-            let isTrown = false;
+            let isThrown = false;
             request.on('data', (chunk: Buffer) => {
                 try {
                     collector.collect(chunk);
                 } catch {
-                    if (!isTrown) {
+                    if (!isThrown) {
                         rej(
                             new NetResponseError(400, {
                                 type: 'text',
                                 content: 'Invalid multipart/form-data body',
                             }),
                         );
-                        isTrown = true;
+                        isThrown = true;
                     }
                 }
             });
             request.on('end', () => {
                 try {
-                    const { formValues, fileLocations } = collector.end();
-                    res({
-                        type: 'form-data',
-                        formValues,
-                        fileLocations,
+                    collector.end().then(({ formValues, fileLocations }) => {
+                        res({
+                            type: 'form-data',
+                            formValues,
+                            fileLocations,
+                        });
                     });
                 } catch {
-                    if (!isTrown) {
+                    if (!isThrown) {
                         rej(
                             new NetResponseError(400, {
                                 type: 'text',
