@@ -1,6 +1,6 @@
 {
   "name": "@just-io/server",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Simple web server",
   "types": "dist/types",
   "main": "dist/cjs/index.js",

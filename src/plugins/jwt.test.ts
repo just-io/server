@@ -85,7 +85,7 @@ describe('JWT', () => {
         test('should return not ok result with invalid token', () => {
             const result = check(INVALID_TOKEN, PRIVATE_KEY);
             assert.equal(result.ok, false);
-            assert.equal(result.error, 'invalid-sign');
+            assert.equal(result.error, 'invalid-token');
         });
     });
 });

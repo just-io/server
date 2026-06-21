@@ -83,21 +83,21 @@ describe('Collector', () => {
                 },
             });
             let offset = 0;
-            const readStream = new Readable({
-                read(size: number) {
-                    const subarray = file.subarray(offset, size);
-                    offset += size;
-                    if (subarray.length) {
-                        return subarray;
-                    }
-                    return null;
-                },
-            });
 
             return {
                 location: `/temp/${files.length}`,
                 writeStream,
-                readStream,
+                makeReadStream: () =>
+                    new Readable({
+                        read(size: number) {
+                            const subarray = file.subarray(offset, size);
+                            offset += size;
+                            if (subarray.length) {
+                                return subarray;
+                            }
+                            return null;
+                        },
+                    }),
                 cleanup: () => Promise.resolve(),
             };
         }
@@ -186,21 +186,21 @@ describe('Collector', () => {
                 },
             });
             let offset = 0;
-            const readStream = new Readable({
-                read(size: number) {
-                    const subarray = file.subarray(offset, size);
-                    offset += size;
-                    if (subarray.length) {
-                        return subarray;
-                    }
-                    return null;
-                },
-            });
 
             return {
                 location: `/temp/${files.length}`,
                 writeStream,
-                readStream,
+                makeReadStream: () =>
+                    new Readable({
+                        read(size: number) {
+                            const subarray = file.subarray(offset, size);
+                            offset += size;
+                            if (subarray.length) {
+                                return subarray;
+                            }
+                            return null;
+                        },
+                    }),
                 cleanup: () => Promise.resolve(),
             };
         }

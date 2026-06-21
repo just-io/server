@@ -127,7 +127,7 @@ export class Server<Global> {
     }
 
     #parseBody(request: http.IncomingMessage): Promise<NetRequestBody | null> {
-        if (!request.headers['content-length']) {
+        if (request.headers['content-length'] === undefined) {
             return Promise.resolve(null);
         }
         const type = request.headers['content-type'];

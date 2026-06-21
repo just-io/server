@@ -29,7 +29,7 @@ export interface FileLocation {
         write(chunk: Buffer): void;
         end(cb?: () => void): void;
     };
-    readStream: {
+    makeReadStream: () => {
         read(size: number): Buffer | null;
     };
     cleanup: () => Promise<void>;

@@ -472,13 +472,23 @@ export default class FormDataBodyParser extends BodyParser {
             });
             request.on('end', () => {
                 try {
-                    collector.end().then(({ formValues, fileLocations }) => {
-                        res({
-                            type: 'form-data',
-                            formValues,
-                            fileLocations,
+                    collector
+                        .end()
+                        .then(({ formValues, fileLocations }) => {
+                            res({
+                                type: 'form-data',
+                                formValues,
+                                fileLocations,
+                            });
+                        })
+                        .catch(() => {
+                            rej(
+                                new NetResponseError(400, {
+                                    type: 'text',
+                                    content: 'Invalid multipart/form-data body',
+                                }),
+                            );
                         });
-                    });
                 } catch {
                     if (!isThrown) {
                         rej(

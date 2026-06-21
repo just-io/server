@@ -101,12 +101,11 @@ export function makeLocalFileStorage(pathToDirectory: string): {
         createFileLocation: (): FileLocation => {
             const name = crypto.randomUUID();
             const location = path.join(pathToDirectory, name);
-            fs.writeFileSync(location, '');
 
             return {
                 location,
                 writeStream: fs.createWriteStream(location),
-                readStream: fs.createReadStream(location),
+                makeReadStream: () => fs.createReadStream(location),
                 cleanup: () => {
                     return fs.promises.unlink(location);
                 },
