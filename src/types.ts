@@ -174,7 +174,7 @@ export type RequestProcessingInfo = {
     finishedReason: RequestFinishedReason;
     periods: {
         total: PeriodData;
-        compousingNetRequest?: PeriodData;
+        composingNetRequest?: PeriodData;
         parsingBody?: PeriodData;
         handling?: PeriodData;
         sending?: PeriodData;

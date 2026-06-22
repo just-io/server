@@ -55,6 +55,7 @@ interface HandlerInfo<Global, Context, Path extends string = string> {
     path: string;
     pattern: Pattern<Path>;
     handler: Handler<Global, Context, Path>;
+    options: RequestOptions;
 }
 
 export class Router<Global, Context> {
@@ -87,12 +88,12 @@ export class Router<Global, Context> {
     ): this {
         const handler =
             typeof routeHandler === 'function' ? { handle: routeHandler } : routeHandler;
-        handler.options = Object.assign({}, this.#options, handler.options);
         this.#handlerInfos.push({
             method,
             path,
             pattern: new Pattern(path),
             handler,
+            options: Object.assign({}, this.#options, handler.options),
         });
         return this;
     }

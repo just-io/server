@@ -105,9 +105,8 @@ export class Server<Global> {
     }
 
     async close(timeout: number): Promise<void> {
-        await new Promise<void>((res, rej) => {
-            this.#httpServer.close((error) => (error ? rej(error) : res()));
-        });
+        this.#httpServer.close();
+
         await Promise.all([
             new Promise<void>((res) => {
                 setTimeout(() => {
@@ -151,8 +150,8 @@ export class Server<Global> {
         }
 
         return new Promise((res, rej) => {
-            stream.on('error', () => {
-                rej();
+            stream.on('error', (err) => {
+                rej(err);
             });
 
             function write() {
@@ -345,7 +344,7 @@ export class Server<Global> {
         });
     }
 
-    #compouseNetRequest(
+    #composeNetRequest(
         request: http.IncomingMessage,
         abortSignal: AbortSignal,
     ): Promise<NetRequest<Global>> {
@@ -500,7 +499,7 @@ export class Server<Global> {
 
         const [info, result] = handlerInfo;
         requestProcessingInfo.handler = info.handler.name ?? info.path;
-        if (info.handler.options?.maxContentLength !== undefined) {
+        if (info.options?.maxContentLength !== undefined) {
             if (!request.headers['content-length']) {
                 requestProcessingInfo.finishedReason = 'length-required';
                 return this.#finishRequest(
@@ -512,7 +511,7 @@ export class Server<Global> {
                     new NetResponseError(411, { type: 'text', content: 'Length Required' }),
                 );
             }
-            if (Number(request.headers['content-length']) > info.handler.options.maxContentLength) {
+            if (Number(request.headers['content-length']) > info.options.maxContentLength) {
                 requestProcessingInfo.finishedReason = 'content-too-large';
                 return this.#finishRequest(
                     request,
@@ -529,8 +528,8 @@ export class Server<Global> {
             request.headers['content-type']?.split(';').map((value) => value.trim()) ?? [];
 
         if (
-            info.handler.options?.acceptContentTypes &&
-            (!contentType || !info.handler.options.acceptContentTypes.includes(contentType))
+            info.options?.acceptContentTypes &&
+            (!contentType || !info.options.acceptContentTypes.includes(contentType))
         ) {
             requestProcessingInfo.finishedReason = 'not-acceptable';
             return this.#finishRequest(
@@ -543,9 +542,9 @@ export class Server<Global> {
             );
         }
 
-        if (info.handler.options?.shouldAbort) {
+        if (info.options?.shouldAbort) {
             requestProcessingInfo.periods.shouldAbortChecking = Period.make();
-            const shouldAbort = await info.handler.options.shouldAbort(request);
+            const shouldAbort = await info.options.shouldAbort(request);
             Period.end(requestProcessingInfo.periods.shouldAbortChecking);
             if (shouldAbort) {
                 requestProcessingInfo.finishedReason = 'too-many-requests';
@@ -566,9 +565,9 @@ export class Server<Global> {
             abortController.abort('socket-closed');
         };
         request.socket.on('close', onSocketClose);
-        requestProcessingInfo.periods.compousingNetRequest = Period.make();
-        const netRequest = await this.#compouseNetRequest(request, abortController.signal);
-        Period.end(requestProcessingInfo.periods.compousingNetRequest);
+        requestProcessingInfo.periods.composingNetRequest = Period.make();
+        const netRequest = await this.#composeNetRequest(request, abortController.signal);
+        Period.end(requestProcessingInfo.periods.composingNetRequest);
         this.#abortControllers.add(abortController);
 
         let netResponse: NetResponse | undefined;
@@ -581,7 +580,7 @@ export class Server<Global> {
             netRequest.pathname.handler = result.matched;
             netRequest.pathname.groups = result.groups;
             requestProcessingInfo.periods.handling = Period.make();
-            if (info.handler.options?.timeout) {
+            if (info.options?.timeout) {
                 netResponse = await Promise.race([
                     matchedRouter.router
                         .callHandler(info, netRequest)
@@ -604,23 +603,20 @@ export class Server<Global> {
                             return netResponse;
                         }),
                     new Promise<NetResponse>((res) =>
-                        setTimeout(
-                            () => {
-                                if (requestProcessingInfo.periods.handling?.[1]) {
-                                    return;
-                                }
-                                Period.end(requestProcessingInfo.periods.handling!);
-                                res(
-                                    new NetResponseError(504, {
-                                        type: 'text',
-                                        content: 'Gateway Timeout',
-                                    }),
-                                );
-                                requestProcessingInfo.finishedReason = 'timeout';
-                                abortController.abort('timeout');
-                            },
-                            info.handler.options?.timeout,
-                        ),
+                        setTimeout(() => {
+                            if (requestProcessingInfo.periods.handling?.[1]) {
+                                return;
+                            }
+                            Period.end(requestProcessingInfo.periods.handling!);
+                            res(
+                                new NetResponseError(504, {
+                                    type: 'text',
+                                    content: 'Gateway Timeout',
+                                }),
+                            );
+                            requestProcessingInfo.finishedReason = 'timeout';
+                            abortController.abort('timeout');
+                        }, info.options.timeout),
                     ),
                 ]);
             } else {

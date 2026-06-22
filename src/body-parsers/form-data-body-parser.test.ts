@@ -69,6 +69,7 @@ describe('Collector', () => {
         const parts = str.split(/(.{1024})/).filter(Boolean);
 
         const files: string[] = [];
+        let counter = 0;
 
         function create(): FileLocation {
             let file = Buffer.alloc(0);
@@ -85,7 +86,7 @@ describe('Collector', () => {
             let offset = 0;
 
             return {
-                location: `/temp/${files.length}`,
+                location: `/temp/${counter++}`,
                 writeStream,
                 makeReadStream: () =>
                     new Readable({
@@ -172,6 +173,7 @@ describe('Collector', () => {
         const parts = invalidStr.split(/(.{32})/).filter(Boolean);
 
         const files: string[] = [];
+        let counter = 0;
 
         function create(): FileLocation {
             let file = Buffer.alloc(0);
@@ -188,7 +190,7 @@ describe('Collector', () => {
             let offset = 0;
 
             return {
-                location: `/temp/${files.length}`,
+                location: `/temp/${counter++}`,
                 writeStream,
                 makeReadStream: () =>
                     new Readable({

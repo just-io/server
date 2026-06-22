@@ -353,7 +353,6 @@ export class Collector {
                 } else {
                     const cutContent = this.#cutLastNewLineSymbols(content);
                     this.#state.file.fileLocation.writeStream.write(cutContent);
-                    this.#state.file.fileLocation.writeStream.end();
                     this.#state.file.size += cutContent.length;
                     this.#fileLocations[this.#state.file.fileLocation.location] =
                         this.#state.file.fileLocation;
@@ -416,7 +415,7 @@ export class Collector {
         while (true) {
             const symb = this.#reader.test();
             if (
-                symb &&
+                symb.length &&
                 Collector.#rBuffer.compare(symb) !== 0 &&
                 Collector.#nBuffer.compare(symb) !== 0
             ) {
