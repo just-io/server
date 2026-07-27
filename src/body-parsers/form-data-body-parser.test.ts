@@ -109,8 +109,6 @@ describe('Collector', () => {
         });
         const result = await collector.end();
 
-        console.log(result);
-
         assert.ok(typeof result.fileLocations === 'object' && result.fileLocations !== null);
         assert.ok(result.fileLocations['/temp/0'].location === '/temp/0');
         assert.ok(result.fileLocations['/temp/1'].location === '/temp/1');

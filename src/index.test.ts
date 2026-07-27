@@ -83,7 +83,7 @@ describe('Server API', () => {
                                 content: '0123456789',
                             },
                             attachment: {
-                                filename: 'text.txt',
+                                filename: 'tex"t.txt',
                             },
                         },
                     });
@@ -346,7 +346,7 @@ describe('Server API', () => {
             assert.equal(response.status, 200);
             assert.equal(
                 response.headers.get('content-disposition'),
-                'attachment; filename=text.txt',
+                'attachment; filename="tex\\"t.txt"',
             );
             assert.deepStrictEqual(file, '0123456789');
         });

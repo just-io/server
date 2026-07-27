@@ -105,7 +105,10 @@ export class Server<Global> {
     }
 
     async close(timeout: number): Promise<void> {
-        this.#httpServer.close();
+        const { promise, resolve, reject } = Promise.withResolvers();
+        this.#httpServer.close((err) => (err ? reject(err) : resolve(undefined)));
+
+        await promise;
 
         await Promise.all([
             new Promise<void>((res) => {
@@ -150,7 +153,7 @@ export class Server<Global> {
         }
 
         return new Promise((res, rej) => {
-            stream.on('error', (err) => {
+            stream.once('error', (err) => {
                 rej(err);
             });
 
@@ -260,7 +263,9 @@ export class Server<Global> {
                     if (netResponse.body.attachment) {
                         response.setHeader(
                             'content-disposition',
-                            `attachment; filename=${netResponse.body.attachment.filename}`,
+                            `attachment; filename="${netResponse.body.attachment.filename
+                                .replace(/\\/g, '\\\\')
+                                .replace(/"/g, '\\"')}"`,
                         );
                     }
                     break;
@@ -627,15 +632,22 @@ export class Server<Global> {
                 }
             }
         } catch (err) {
-            if (err instanceof NetResponseError) {
-                requestProcessingInfo.finishedReason = 'error';
-                netResponse = err;
-            } else {
-                requestProcessingInfo.finishedReason = 'internal-server-error';
-                netResponse = new NetResponseError(500, {
+            if (requestProcessingInfo.finishedReason === 'socket-closed') {
+                netResponse = new NetResponseError(0, {
                     type: 'text',
-                    content: 'Internal Server Error',
+                    content: 'Socket closed',
                 });
+            } else {
+                if (err instanceof NetResponseError) {
+                    requestProcessingInfo.finishedReason = 'error';
+                    netResponse = err;
+                } else {
+                    requestProcessingInfo.finishedReason = 'internal-server-error';
+                    netResponse = new NetResponseError(500, {
+                        type: 'text',
+                        content: 'Internal Server Error',
+                    });
+                }
             }
         } finally {
             this.#abortControllers.delete(abortController);

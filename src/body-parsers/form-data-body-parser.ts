@@ -106,7 +106,7 @@ class Reader {
         const slices: Buffer[] = [];
         let total = 0;
         if (!this.#chunks[this.#currentChunk]) {
-            throw new Error('Not enought');
+            throw new Error('Not enough');
         }
         while (total < length) {
             const slice = this.#chunks[this.#currentChunk].subarray(

@@ -55,11 +55,16 @@ export function verify(token: string, privateKey: string): boolean {
         return false;
     }
     const [head64, body64, sign64] = parts;
-    const tokenBuffer = Buffer.from(sign(head64, body64, privateKey));
-    const signBuffer = Buffer.from(sign64);
-    return (
-        tokenBuffer.length === signBuffer.length && crypto.timingSafeEqual(tokenBuffer, signBuffer)
-    );
+    try {
+        const tokenBuffer = Buffer.from(sign(head64, body64, privateKey), 'base64url');
+        const signBuffer = Buffer.from(sign64, 'base64url');
+        return (
+            tokenBuffer.length === signBuffer.length &&
+            crypto.timingSafeEqual(tokenBuffer, signBuffer)
+        );
+    } catch {
+        return false;
+    }
 }
 
 type CheckResult<T> =
@@ -78,16 +83,20 @@ export function check<T>(
         return { ok: false, error: 'invalid-token' };
     }
     const [head64, body64, sign64] = parts;
-    const tokenBuffer = Buffer.from(sign(head64, body64, privateKey));
-    const signBuffer = Buffer.from(sign64);
-    if (tokenBuffer.length !== signBuffer.length) {
-        return { ok: false, error: 'invalid-token' };
-    }
-    if (!crypto.timingSafeEqual(tokenBuffer, signBuffer)) {
-        return { ok: false, error: 'invalid-sign' };
-    }
     try {
-        return { ok: true, value: decodeBody(body64, toJson as true) };
+        const tokenBuffer = Buffer.from(sign(head64, body64, privateKey), 'base64url');
+        const signBuffer = Buffer.from(sign64, 'base64url');
+        if (tokenBuffer.length !== signBuffer.length) {
+            return { ok: false, error: 'invalid-token' };
+        }
+        if (!crypto.timingSafeEqual(tokenBuffer, signBuffer)) {
+            return { ok: false, error: 'invalid-sign' };
+        }
+        try {
+            return { ok: true, value: decodeBody(body64, toJson as true) };
+        } catch {
+            return { ok: false, error: 'invalid-token' };
+        }
     } catch {
         return { ok: false, error: 'invalid-token' };
     }
