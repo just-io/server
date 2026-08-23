@@ -1,7 +1,7 @@
 import http from 'node:http';
 
-import { NetRequest, NetResponse } from './types';
-import Pattern, { ExecResult } from './components/pattern';
+import { ExtractGroup, NetRequest, NetResponse } from './types';
+import { Matched, PathMatcher, StringPath } from './components/path-matcher';
 
 export type RequestOptions = {
     acceptContentTypes?: string[];
@@ -53,17 +53,21 @@ export type RouteMiddleware<Global, Context> =
 interface HandlerInfo<Global, Context, Path extends string = string> {
     method: HTTPMethod;
     path: string;
-    pattern: Pattern<Path>;
     handler: Handler<Global, Context, Path>;
     options: RequestOptions;
 }
 
 export class Router<Global, Context> {
-    #handlerInfos: HandlerInfo<Global, Context, string>[] = [];
+    #handlerPathMatcher: PathMatcher<HandlerInfo<Global, Context, string>> = new PathMatcher();
 
     #middleware: Middleware<Global, Context>;
 
     #options?: RouterRequestOptions<Global, Context>;
+
+    #routeHandlerMap = new Map<
+        RouteHandler<Global, Context, string>,
+        HandlerInfo<Global, Context, string>
+    >();
 
     name?: string;
 
@@ -81,87 +85,104 @@ export class Router<Global, Context> {
         return this.#options?.onCreatedNetResponse;
     }
 
-    addHandler<Path extends string>(
+    addHandler<Path extends StringPath>(
         method: HTTPMethod,
         path: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         const handler =
             typeof routeHandler === 'function' ? { handle: routeHandler } : routeHandler;
-        this.#handlerInfos.push({
+        const handlerInfo = {
             method,
             path,
-            pattern: new Pattern(path),
             handler,
             options: Object.assign({}, this.#options, handler.options),
-        });
+        };
+        this.#routeHandlerMap.set(routeHandler, handlerInfo);
+        this.#handlerPathMatcher.add(PathMatcher.toPathItems(path), handlerInfo);
+
         return this;
     }
 
-    all<Path extends string>(
+    deleteHandler<Path extends StringPath>(
+        method: HTTPMethod,
+        path: Path,
+        routeHandler: RouteHandler<Global, Context, Path>,
+    ): boolean {
+        const handlerInfo = this.#routeHandlerMap.get(routeHandler);
+        if (!handlerInfo) {
+            return false;
+        }
+
+        this.#routeHandlerMap.delete(routeHandler);
+
+        return this.#handlerPathMatcher.delete(PathMatcher.toPathItems(path), handlerInfo);
+    }
+
+    all<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('*', pattern, routeHandler);
     }
 
-    get<Path extends string>(
+    get<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('GET', pattern, routeHandler);
     }
 
-    post<Path extends string>(
+    post<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('POST', pattern, routeHandler);
     }
 
-    patch<Path extends string>(
+    patch<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('PATCH', pattern, routeHandler);
     }
 
-    delete<Path extends string>(
+    delete<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('DELETE', pattern, routeHandler);
     }
 
-    put<Path extends string>(
+    put<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('PUT', pattern, routeHandler);
     }
 
-    head<Path extends string>(
+    head<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('HEAD', pattern, routeHandler);
     }
 
-    connect<Path extends string>(
+    connect<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('CONNECT', pattern, routeHandler);
     }
 
-    options<Path extends string>(
+    options<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
         return this.addHandler('OPTIONS', pattern, routeHandler);
     }
 
-    trace<Path extends string>(
+    trace<Path extends StringPath>(
         pattern: Path,
         routeHandler: RouteHandler<Global, Context, Path>,
     ): this {
@@ -170,20 +191,20 @@ export class Router<Global, Context> {
 
     getHandlerInfo(
         method: HTTPMethod,
-        pathname: string,
-    ): [HandlerInfo<Global, Context>, ExecResult<string>] | null {
-        let maxParams: null | [HandlerInfo<Global, Context>, ExecResult<string>] = null;
-        for (const handlerInfo of this.#handlerInfos) {
-            if (handlerInfo.method !== '*' && handlerInfo.method !== method) {
+        pathname: StringPath,
+    ): [HandlerInfo<Global, Context>, ExtractGroup<string>] | null {
+        const matched = this.#handlerPathMatcher.match(PathMatcher.toItems(pathname));
+        let maxMatched: null | Matched<HandlerInfo<Global, Context, string>> = null;
+        for (const item of matched) {
+            if (item.value.method !== '*' && item.value.method !== method) {
                 continue;
             }
-            const result = handlerInfo.pattern.exec(pathname) as null | ExecResult<string>;
-            if (result && (!maxParams || result.matched.length > maxParams[1].matched.length)) {
-                maxParams = [handlerInfo, result];
+            if (!maxMatched || maxMatched.matchedCount < item.matchedCount) {
+                maxMatched = item;
             }
         }
-        if (maxParams) {
-            return [maxParams[0], maxParams[1]];
+        if (maxMatched) {
+            return [maxMatched.value, maxMatched.params];
         }
 
         return null;

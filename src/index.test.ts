@@ -35,7 +35,7 @@ describe('Server API', () => {
     server
         .addRouter(
             '/found',
-            new MiddlewarelessRouter().get('', () => {
+            new MiddlewarelessRouter().get('/', () => {
                 return Promise.resolve({});
             }),
         )
@@ -434,7 +434,7 @@ describe('Server API', () => {
                 assert.equal(response.status, 200);
             });
 
-            test('should response 429 on timeout', async () => {
+            test('should response 504 on timeout', async () => {
                 const response = await fetch(
                     `${ADDRESS}/common-router/path-with-timeout?timeout=11`,
                 );
@@ -673,7 +673,7 @@ describe('Server inside', () => {
                 }),
         }).addRouter(
             '/global',
-            new MiddlewarelessRouter<Info>().get('', async (netRequest) => {
+            new MiddlewarelessRouter<Info>().get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.global, { serverName: 'localhost' });
                 return {};
             }),
@@ -697,7 +697,7 @@ describe('Server inside', () => {
             '/context',
             new Router<unknown, ContextInfo>((netRequest) =>
                 Promise.resolve(updateContext(netRequest, { info: 'test' })),
-            ).get('', async (netRequest) => {
+            ).get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.context, { info: 'test' });
                 return {};
             }),
@@ -732,7 +732,7 @@ describe('Server inside', () => {
             '/finish',
             new Router<unknown, ContextInfo>((netRequest) =>
                 Promise.resolve(updateContext(netRequest, { info: 'test' })),
-            ).get('', async (netRequest) => {
+            ).get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.context, { info: 'test' });
                 return {};
             }),
@@ -745,6 +745,64 @@ describe('Server inside', () => {
         assert.equal(response.status, 200);
         assert.equal(result, '');
         assert.equal(calls, 1);
+
+        return server.close(0);
+    });
+});
+
+describe('Server', () => {
+    test('should delete router', async () => {
+        const server = new Server<unknown>(new http.Server(), {
+            createFileLocation,
+            makeGlobal: () => Promise.resolve(),
+        });
+        const handler = () => {
+            return Promise.resolve({});
+        };
+        const router = new MiddlewarelessRouter().get('/', handler);
+        server.addRouter('/handler', router);
+
+        server.listen(PORT + 4);
+
+        const response = await fetch(`http://localhost:${PORT + 4}/handler`);
+        const result = await response.text();
+        assert.equal(response.status, 200);
+        assert.equal(result, '');
+
+        server.deleteRouter('/handler', router);
+
+        const responseAfterDeleting = await fetch(`http://localhost:${PORT + 4}/handler`);
+        const resultAfterDeleting = await responseAfterDeleting.text();
+        assert.equal(responseAfterDeleting.status, 404);
+        assert.equal(resultAfterDeleting, 'Not Found');
+
+        return server.close(0);
+    });
+
+    test('should delete handler', async () => {
+        const server = new Server<unknown>(new http.Server(), {
+            createFileLocation,
+            makeGlobal: () => Promise.resolve(),
+        });
+        const handler = () => {
+            return Promise.resolve({});
+        };
+        const router = new MiddlewarelessRouter().get('/', handler);
+        server.addRouter('/handler', router);
+
+        server.listen(PORT + 5);
+
+        const response = await fetch(`http://localhost:${PORT + 5}/handler`);
+        const result = await response.text();
+        assert.equal(response.status, 200);
+        assert.equal(result, '');
+
+        router.deleteHandler('DELETE', '/', handler);
+
+        const responseAfterDeleting = await fetch(`http://localhost:${PORT + 5}/handler`);
+        const resultAfterDeleting = await responseAfterDeleting.text();
+        assert.equal(responseAfterDeleting.status, 404);
+        assert.equal(resultAfterDeleting, 'Not Found');
 
         return server.close(0);
     });

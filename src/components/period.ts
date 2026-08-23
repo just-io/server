@@ -9,6 +9,12 @@ export class Period {
         period[1] = to;
     }
 
+    static endIfPresent(period?: PeriodData, to = Date.now()): void {
+        if (period) {
+            period[1] = to;
+        }
+    }
+
     static duration(period: PeriodData): number {
         if (period[1] === undefined) {
             return Number.NaN;

@@ -1,7 +1,16 @@
 import http from 'node:http';
 import { Readable } from 'node:stream';
-import { ExtractGroups } from './components/pattern';
 import { PeriodData } from './components/period';
+
+export type ExtractGroups<Path> = Path extends `${infer Segment}/${infer Rest}`
+    ? ExtractGroup<Segment> & ExtractGroups<Rest>
+    : ExtractGroup<Path>;
+
+export type ExtractGroup<Segment> = Segment extends `:${infer Param}`
+    ? {
+          [K in Param]: string;
+      }
+    : unknown;
 
 export type JSONValue =
     | string
@@ -84,7 +93,6 @@ export interface NetRequest<
     startedAt: number;
     pathname: {
         router: string;
-        handler: string;
         groups: ExtractGroups<Path>;
     };
     abortSignal: AbortSignal;

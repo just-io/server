@@ -19,6 +19,7 @@ import BodyParser from './body-parsers/body-parser';
 import { Router, HTTPMethod } from './router';
 import TextBodyParser from './body-parsers/text-body-parser';
 import { Period } from './components/period';
+import { PathMatcher, StringPath } from './components/path-matcher';
 
 export interface ServerSettings<Global> {
     createFileLocation: CreateFileLocation;
@@ -54,7 +55,7 @@ const DEFAULT_REQUEST_ID_EXTRACTOR = (request: http.IncomingMessage) =>
         : request.headers['x-request-id']) ?? crypto.randomUUID();
 
 export class Server<Global> {
-    #routerEntries: [prefix: RegExp, router: Router<Global, unknown>][] = [];
+    #routerPathMatcher: PathMatcher<Router<Global, unknown>> = new PathMatcher();
 
     #settings: ServerSettings<Global>;
 
@@ -122,10 +123,15 @@ export class Server<Global> {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    addRouter(prefix: string, router: Router<Global, any>): this {
-        this.#routerEntries.push([new RegExp(`^${prefix}`), router]);
+    addRouter(prefix: StringPath, router: Router<Global, any>): this {
+        this.#routerPathMatcher.add(PathMatcher.toPathItems(prefix), router);
 
         return this;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deleteRouter(prefix: StringPath, router: Router<Global, any>): boolean {
+        return this.#routerPathMatcher.delete(PathMatcher.toPathItems(prefix), router);
     }
 
     #parseBody(request: http.IncomingMessage): Promise<NetRequestBody | null> {
@@ -153,12 +159,14 @@ export class Server<Global> {
         }
 
         return new Promise((res, rej) => {
-            stream.once('error', (err) => {
+            const errorHandler = (err: Error) => {
                 rej(err);
-            });
+            };
+            stream.once('error', errorHandler);
 
             function write() {
                 if (chunks.length === 0) {
+                    stream.off('error', errorHandler);
                     res();
                     return;
                 }
@@ -384,7 +392,6 @@ export class Server<Global> {
                 body: null,
                 pathname: {
                     router: '',
-                    handler: '',
                     groups: {},
                 },
                 abortSignal,
@@ -457,22 +464,8 @@ export class Server<Global> {
             finishedReason: 'handled',
         };
         const url = new URL(request.url ?? '', `http://${request.headers.host}`);
-        const matchedRouter = this.#routerEntries.reduce(
-            (obj, routerEntry) => {
-                const prefix = url.pathname.match(routerEntry[0])?.[0];
-                if (obj && obj.prefix.length >= (prefix?.length ?? 0)) {
-                    return obj;
-                }
-                if (prefix) {
-                    return {
-                        prefix,
-                        router: routerEntry[1],
-                    };
-                }
-                return null;
-            },
-            null as { router: Router<Global, unknown>; prefix: string } | null,
-        );
+        const items = PathMatcher.toItems(url.pathname as StringPath);
+        const matchedRouter = this.#routerPathMatcher.matchLongest(items);
         if (!matchedRouter) {
             requestProcessingInfo.finishedReason = 'not-found';
             return this.#finishRequest(
@@ -484,9 +477,13 @@ export class Server<Global> {
                 new NetResponseError(404, { type: 'text', content: 'Not Found' }),
             );
         }
-        requestProcessingInfo.router = matchedRouter.router.name ?? matchedRouter.prefix;
-        const cutPathname = url.pathname.substring(matchedRouter.prefix.length);
-        const handlerInfo = matchedRouter.router.getHandlerInfo(
+        requestProcessingInfo.router = matchedRouter.value.name ?? url.pathname;
+        const cutPathname = url.pathname.substring(
+            items
+                .slice(0, matchedRouter.matchedCount)
+                .reduce((total, item) => total + item.length, 0) + matchedRouter.matchedCount,
+        ) as StringPath;
+        const handlerInfo = matchedRouter.value.getHandlerInfo(
             request.method as HTTPMethod,
             cutPathname,
         );
@@ -581,13 +578,12 @@ export class Server<Global> {
             const body = await this.#parseBody(request);
             Period.end(requestProcessingInfo.periods.parsingBody);
             netRequest.body = body;
-            netRequest.pathname.router = matchedRouter.prefix;
-            netRequest.pathname.handler = result.matched;
-            netRequest.pathname.groups = result.groups;
+            netRequest.pathname.router = url.pathname;
+            netRequest.pathname.groups = result;
             requestProcessingInfo.periods.handling = Period.make();
             if (info.options?.timeout) {
                 netResponse = await Promise.race([
-                    matchedRouter.router
+                    matchedRouter.value
                         .callHandler(info, netRequest)
                         // eslint-disable-next-line @typescript-eslint/no-shadow
                         .then((netResponse) => {
@@ -595,8 +591,8 @@ export class Server<Global> {
                                 return;
                             }
                             Period.end(requestProcessingInfo.periods.handling!);
-                            if (matchedRouter.router.onCreatedNetResponse) {
-                                return matchedRouter.router
+                            if (matchedRouter.value.onCreatedNetResponse) {
+                                return matchedRouter.value
                                     .onCreatedNetResponse(netRequest, netResponse)
                                     .then(() => {
                                         if (requestProcessingInfo.finishedReason === 'timeout') {
@@ -625,13 +621,15 @@ export class Server<Global> {
                     ),
                 ]);
             } else {
-                netResponse = await matchedRouter.router.callHandler(info, netRequest);
+                netResponse = await matchedRouter.value.callHandler(info, netRequest);
                 Period.end(requestProcessingInfo.periods.handling!);
-                if (matchedRouter.router.onCreatedNetResponse) {
-                    await matchedRouter.router.onCreatedNetResponse(netRequest, netResponse);
+                if (matchedRouter.value.onCreatedNetResponse) {
+                    await matchedRouter.value.onCreatedNetResponse(netRequest, netResponse);
                 }
             }
         } catch (err) {
+            Period.endIfPresent(requestProcessingInfo.periods.parsingBody);
+            Period.endIfPresent(requestProcessingInfo.periods.handling);
             if (requestProcessingInfo.finishedReason === 'socket-closed') {
                 netResponse = new NetResponseError(0, {
                     type: 'text',
