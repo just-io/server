@@ -5,7 +5,7 @@ import { NetResponse } from '../types';
 import { getMimeTypeByFileExtension } from './files';
 import { NetResponseError } from '../components/net-response-error';
 
-export default class StaticRouter<Global, Context = Record<string, unknown>> extends Router<
+export class StaticRouter<Global, Context = Record<string, unknown>> extends Router<
     Global,
     Context
 > {

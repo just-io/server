@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 
 import http from 'node:http';
+import stream from 'node:stream';
 
 import {
     Server,
@@ -70,6 +71,27 @@ describe('Server API', () => {
                                 type: 'text',
                                 content: '0123456789',
                             },
+                        },
+                    });
+                })
+                .get('/path-with-stream', () => {
+                    const content = Buffer.from('0'.repeat(1024 * 1024));
+                    let offset = 0;
+
+                    return Promise.resolve({
+                        body: {
+                            type: 'stream',
+                            contentType: 'text/plain',
+                            content: new stream.Readable({
+                                read(size) {
+                                    this.push(content.subarray(offset, offset + size));
+                                    offset += size;
+                                    if (offset > content.length) {
+                                        this.push(null);
+                                    }
+                                },
+                            }),
+                            contentLength: content.length,
                         },
                     });
                 })
@@ -339,6 +361,14 @@ describe('Server API', () => {
             assert.deepStrictEqual(file, '0123456789');
         });
 
+        test('should response 200 on valid url with file body as stream', async () => {
+            const response = await fetch(`${ADDRESS}/common-router/path-with-stream`);
+            const result = await response.blob();
+            const file = await result.text();
+            assert.equal(response.status, 200);
+            assert.deepStrictEqual(file, '0'.repeat(1024 * 1024));
+        });
+
         test('should response 200 on valid url with file body attachment', async () => {
             const response = await fetch(`${ADDRESS}/common-router/path-with-file-attachment`);
             const result = await response.blob();
@@ -369,6 +399,15 @@ describe('Server API', () => {
             const result = await response.json();
             assert.equal(response.status, 200);
             assert.deepStrictEqual(result, { id: 'id' });
+        });
+
+        test('should response 200 on valid url with query params with UTF-8', async () => {
+            const response = await fetch(
+                `${ADDRESS}/common-router/path-with-query-params/my%20report.txt`,
+            );
+            const result = await response.json();
+            assert.equal(response.status, 200);
+            assert.deepStrictEqual(result, { id: 'my report.txt' });
         });
 
         test('should response 500 on server error', async () => {
@@ -647,6 +686,30 @@ describe('Server API', () => {
                 assert.equal(response.status, 413);
                 assert.deepStrictEqual(result, 'Content Too Large');
             });
+        });
+
+        test('should accept a chunked request body', async () => {
+            const result = await new Promise<{ status?: number; body: string }>((resolve) => {
+                const req = http.request(
+                    {
+                        port: PORT,
+                        path: '/body-router/path-with-json',
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                    },
+                    (res) => {
+                        let body = '';
+                        res.on('data', (d) => (body += d));
+                        res.on('end', () => resolve({ status: res.statusCode, body }));
+                    },
+                );
+                req.write('{"hello":');
+                req.write('"world"}');
+                req.end();
+            });
+
+            assert.equal(result.status, 200);
+            assert.deepStrictEqual(JSON.parse(result.body), { hello: 'world' });
         });
     });
 

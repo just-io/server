@@ -5,29 +5,33 @@ import BodyParser from './body-parser';
 import { NetResponseError } from '../components/net-response-error';
 
 export default class JsonBodyParser extends BodyParser {
-    parse(request: http.IncomingMessage): Promise<NetRequestBody | null> {
-        return new Promise((res, rej) => {
-            const chunks: Buffer[] = [];
-            request.on('data', (chunk: Buffer) => {
+    parse(
+        request: http.IncomingMessage,
+        maxContentLength?: number,
+    ): Promise<NetRequestBody | null> {
+        const chunks: Buffer[] = [];
+
+        return this.readBody(
+            request,
+            (chunk: Buffer) => {
                 chunks.push(chunk);
-            });
-            request.on('end', () => {
-                const data = Buffer.concat(chunks);
-                try {
-                    res({
-                        type: 'json',
-                        content: JSON.parse(data.toString('utf8')),
-                    });
-                } catch {
-                    rej(
-                        new NetResponseError(400, {
-                            type: 'text',
-                            content: 'Invalid application/json body',
-                        }),
-                    );
-                }
-            });
-            request.on('error', rej);
+
+                return true;
+            },
+            maxContentLength,
+        ).then(() => {
+            const data = Buffer.concat(chunks);
+            try {
+                return {
+                    type: 'json',
+                    content: JSON.parse(data.toString('utf8')),
+                };
+            } catch {
+                throw new NetResponseError(400, {
+                    type: 'text',
+                    content: 'Invalid application/json body',
+                });
+            }
         });
     }
 }

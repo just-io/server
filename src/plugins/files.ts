@@ -87,7 +87,7 @@ export const UNKNOWN_MIME_TYPE = 'application/octet-stream';
 export function getMimeTypeByFileExtension(filename: string): string {
     const ext = filename.match(/\.([^.]+)$/)?.[1] ?? '';
 
-    return MIME_TYPES_MAP[ext] ?? UNKNOWN_MIME_TYPE;
+    return MIME_TYPES_MAP[ext.toLowerCase()] ?? UNKNOWN_MIME_TYPE;
 }
 
 export function makeLocalFileStorage(pathToDirectory: string): {

@@ -112,12 +112,16 @@ export class Server<Global> {
         await promise;
 
         await Promise.all([
-            new Promise<void>((res) => {
-                setTimeout(() => {
-                    this.#abortControllers.forEach((abortController) => abortController.abort());
-                    res();
-                }, timeout);
-            }),
+            this.#abortControllers.size
+                ? new Promise<void>((res) => {
+                      setTimeout(() => {
+                          this.#abortControllers.forEach((abortController) =>
+                              abortController.abort(),
+                          );
+                          res();
+                      }, timeout);
+                  })
+                : Promise.resolve(),
             ...Array.from(this.#handlingPromises),
         ]);
     }
@@ -134,13 +138,19 @@ export class Server<Global> {
         return this.#routerPathMatcher.delete(PathMatcher.toPathItems(prefix), router);
     }
 
-    #parseBody(request: http.IncomingMessage): Promise<NetRequestBody | null> {
-        if (request.headers['content-length'] === undefined) {
+    #parseBody(
+        request: http.IncomingMessage,
+        maxContentLength?: number,
+    ): Promise<NetRequestBody | null> {
+        if (
+            request.headers['content-length'] === undefined &&
+            request.headers['transfer-encoding'] === undefined
+        ) {
             return Promise.resolve(null);
         }
         const type = request.headers['content-type'];
         if (!type) {
-            return this.#parsers[DEFAULT_TYPE_PARSER].parse(request);
+            return this.#parsers[DEFAULT_TYPE_PARSER].parse(request, maxContentLength);
         }
         const typeParserEntry = this.#typeParserEntries.find((aTypeParserEntry) =>
             type.includes(aTypeParserEntry[0]),
@@ -151,11 +161,11 @@ export class Server<Global> {
         return this.#parsers[DEFAULT_TYPE_PARSER].parse(request);
     }
 
-    #writeContentToStream(stream: Writable, content: string | Buffer): Promise<void> {
+    #writeContentToStream(stream: Writable, content: Buffer): Promise<void> {
         const size = this.#settings.bufferSize ?? DEFAULT_BUFFER_SIZE;
-        const chunks: (string | Buffer)[] = [];
+        const chunks: Buffer[] = [];
         for (let i = 0; i < content.length; i += size) {
-            chunks.push(content.slice(i, i + size));
+            chunks.push(content.subarray(i, i + size));
         }
 
         return new Promise((res, rej) => {
@@ -286,7 +296,7 @@ export class Server<Global> {
 
             switch (netResponse.body?.type) {
                 case 'text': {
-                    this.#writeContentToStream(response, netResponse.body.content)
+                    this.#writeContentToStream(response, Buffer.from(netResponse.body.content))
                         .then(() => {
                             response.end();
                             res();
@@ -295,7 +305,7 @@ export class Server<Global> {
                     break;
                 }
                 case 'json': {
-                    this.#writeContentToStream(response, stringifyJson!)
+                    this.#writeContentToStream(response, Buffer.from(stringifyJson!))
                         .then(() => {
                             response.end();
                             res();
@@ -314,7 +324,7 @@ export class Server<Global> {
                 }
                 case 'stream': {
                     netResponse.body.content.pipe(response);
-                    netResponse.body.content.on('end', () => {
+                    response.on('finish', () => {
                         res();
                     });
                     netResponse.body.content.on('error', (err) => {
@@ -331,7 +341,10 @@ export class Server<Global> {
                             })
                             .catch(rej);
                     } else if (netResponse.body.content.type === 'text') {
-                        this.#writeContentToStream(response, netResponse.body.content.content)
+                        this.#writeContentToStream(
+                            response,
+                            Buffer.from(netResponse.body.content.content),
+                        )
                             .then(() => {
                                 response.end();
                                 res();
@@ -375,9 +388,9 @@ export class Server<Global> {
                     const cookie = request.headers.cookie;
                     cookies = !cookie
                         ? {}
-                        : cookie.split('; ').reduce(
+                        : cookie.split(';').reduce(
                               (cookieAcc, str) => {
-                                  const [, key, value] = str.match(/^([^=]+)=(.*)/) ?? [];
+                                  const [, key, value] = str.trim().match(/^([^=]+)=(.*)/) ?? [];
                                   if (key) {
                                       cookieAcc[key] = value;
                                   }
@@ -464,7 +477,8 @@ export class Server<Global> {
             finishedReason: 'handled',
         };
         const url = new URL(request.url ?? '', `http://${request.headers.host}`);
-        const items = PathMatcher.toItems(url.pathname as StringPath);
+        const pathname = decodeURIComponent(url.pathname) as StringPath;
+        const items = PathMatcher.toItems(pathname);
         const matchedRouter = this.#routerPathMatcher.matchLongest(items);
         if (!matchedRouter) {
             requestProcessingInfo.finishedReason = 'not-found';
@@ -477,12 +491,12 @@ export class Server<Global> {
                 new NetResponseError(404, { type: 'text', content: 'Not Found' }),
             );
         }
-        requestProcessingInfo.router = matchedRouter.value.name ?? url.pathname;
-        const cutPathname = url.pathname.substring(
+        const cutPathname = pathname.substring(
             items
                 .slice(0, matchedRouter.matchedCount)
                 .reduce((total, item) => total + item.length, 0) + matchedRouter.matchedCount,
         ) as StringPath;
+        requestProcessingInfo.router = matchedRouter.value.name ?? cutPathname;
         const handlerInfo = matchedRouter.value.getHandlerInfo(
             request.method as HTTPMethod,
             cutPathname,
@@ -502,18 +516,10 @@ export class Server<Global> {
         const [info, result] = handlerInfo;
         requestProcessingInfo.handler = info.handler.name ?? info.path;
         if (info.options?.maxContentLength !== undefined) {
-            if (!request.headers['content-length']) {
-                requestProcessingInfo.finishedReason = 'length-required';
-                return this.#finishRequest(
-                    request,
-                    response,
-                    requestProcessingInfo,
-                    true,
-                    undefined,
-                    new NetResponseError(411, { type: 'text', content: 'Length Required' }),
-                );
-            }
-            if (Number(request.headers['content-length']) > info.options.maxContentLength) {
+            if (
+                request.headers['content-length'] !== undefined &&
+                Number(request.headers['content-length']) > info.options.maxContentLength
+            ) {
                 requestProcessingInfo.finishedReason = 'content-too-large';
                 return this.#finishRequest(
                     request,
@@ -575,13 +581,13 @@ export class Server<Global> {
         let netResponse: NetResponse | undefined;
         try {
             requestProcessingInfo.periods.parsingBody = Period.make();
-            const body = await this.#parseBody(request);
+            netRequest.body = await this.#parseBody(request, info.options?.maxContentLength);
             Period.end(requestProcessingInfo.periods.parsingBody);
-            netRequest.body = body;
-            netRequest.pathname.router = url.pathname;
+            netRequest.pathname.router = pathname;
             netRequest.pathname.groups = result;
             requestProcessingInfo.periods.handling = Period.make();
             if (info.options?.timeout) {
+                let timeout: ReturnType<typeof setTimeout> | undefined;
                 netResponse = await Promise.race([
                     matchedRouter.value
                         .callHandler(info, netRequest)
@@ -591,6 +597,7 @@ export class Server<Global> {
                                 return;
                             }
                             Period.end(requestProcessingInfo.periods.handling!);
+                            clearTimeout(timeout);
                             if (matchedRouter.value.onCreatedNetResponse) {
                                 return matchedRouter.value
                                     .onCreatedNetResponse(netRequest, netResponse)
@@ -603,21 +610,22 @@ export class Server<Global> {
                             }
                             return netResponse;
                         }),
-                    new Promise<NetResponse>((res) =>
-                        setTimeout(() => {
-                            if (requestProcessingInfo.periods.handling?.[1]) {
-                                return;
-                            }
-                            Period.end(requestProcessingInfo.periods.handling!);
-                            res(
-                                new NetResponseError(504, {
-                                    type: 'text',
-                                    content: 'Gateway Timeout',
-                                }),
-                            );
-                            requestProcessingInfo.finishedReason = 'timeout';
-                            abortController.abort('timeout');
-                        }, info.options.timeout),
+                    new Promise<NetResponse>(
+                        (res) =>
+                            (timeout = setTimeout(() => {
+                                if (requestProcessingInfo.periods.handling?.[1]) {
+                                    return;
+                                }
+                                Period.end(requestProcessingInfo.periods.handling!);
+                                res(
+                                    new NetResponseError(504, {
+                                        type: 'text',
+                                        content: 'Gateway Timeout',
+                                    }),
+                                );
+                                requestProcessingInfo.finishedReason = 'timeout';
+                                abortController.abort('timeout');
+                            }, info.options.timeout)),
                     ),
                 ]);
             } else {

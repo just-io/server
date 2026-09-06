@@ -7,6 +7,7 @@ describe('getMimeTypeByFileExtension', () => {
         assert.equal(getMimeTypeByFileExtension('file.txt'), 'text/plain');
         assert.equal(getMimeTypeByFileExtension('file.tar'), 'application/x-tar');
         assert.equal(getMimeTypeByFileExtension('file.js'), 'text/javascript');
+        assert.equal(getMimeTypeByFileExtension('file.JS'), 'text/javascript');
     });
 
     test('should return unknown type for file without extension', () => {

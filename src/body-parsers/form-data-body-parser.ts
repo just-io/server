@@ -274,13 +274,27 @@ export class Collector {
             case 'reading-header-disposition': {
                 this.#readEmpty();
                 const line = this.#readLine();
-                const matched = line.match(
-                    /Content-Disposition: form-data; name="([^"]+)"(?:; filename="([^"]+)")?/i,
-                );
-                if (!matched) {
+                const [header, ...parts] = line.split(';').map((part) => part.trim());
+                if (header !== 'Content-Disposition: form-data') {
                     throw new Error('Invalid header line');
                 }
-                const [, name, filename] = matched;
+                let name = '';
+                let filename = '';
+                for (const part of parts) {
+                    const [key, value] = part.split('=');
+                    if (key === 'name') {
+                        name = value.slice(1, -1);
+                    } else if (key === 'filename') {
+                        filename = value.slice(1, -1);
+                    } else if (key === 'filename*') {
+                        filename = decodeURIComponent(value.slice(7));
+                    } else {
+                        throw new Error('Invalid header line');
+                    }
+                }
+                if (!name) {
+                    throw new Error('Invalid header line');
+                }
                 if (filename) {
                     const fileLocation = this.#createNewFileLocation();
                     this.#state = {
@@ -436,70 +450,64 @@ export default class FormDataBodyParser extends BodyParser {
         this.#createNewFileLocation = createNewFileLocation;
     }
 
-    parse(request: http.IncomingMessage): Promise<NetRequestBody | null> {
-        return new Promise((res, rej) => {
-            const type = request.headers['content-type'] ?? '';
-            const boundary = type.match(/boundary="?([^"]+)"?/)?.[1];
-            if (!boundary) {
-                return rej(
-                    new NetResponseError(400, {
-                        type: 'text',
-                        content: 'Invalid header value Content-type',
-                    }),
-                );
-            }
-            const collector = new Collector(
-                Buffer.from('--' + boundary),
-                boundary.length * 10,
-                this.#createNewFileLocation,
+    parse(
+        request: http.IncomingMessage,
+        maxContentLength?: number,
+    ): Promise<NetRequestBody | null> {
+        const type = request.headers['content-type'] ?? '';
+        const boundary = type.match(/boundary="?([^"]+)"?/)?.[1];
+        if (!boundary) {
+            return Promise.reject(
+                new NetResponseError(400, {
+                    type: 'text',
+                    content: 'Invalid header value Content-type',
+                }),
             );
-            let isThrown = false;
-            request.on('data', (chunk: Buffer) => {
+        }
+        const collector = new Collector(
+            Buffer.from('--' + boundary),
+            boundary.length * 10,
+            this.#createNewFileLocation,
+        );
+        let collectError: NetResponseError | undefined;
+
+        return this.readBody(
+            request,
+            (chunk: Buffer) => {
                 try {
                     collector.collect(chunk);
+
+                    return true;
                 } catch {
-                    if (!isThrown) {
-                        rej(
-                            new NetResponseError(400, {
-                                type: 'text',
-                                content: 'Invalid multipart/form-data body',
-                            }),
-                        );
-                        isThrown = true;
-                    }
-                }
-            });
-            request.on('end', () => {
-                try {
-                    collector
-                        .end()
-                        .then(({ formValues, fileLocations }) => {
-                            res({
-                                type: 'form-data',
-                                formValues,
-                                fileLocations,
-                            });
-                        })
-                        .catch(() => {
-                            rej(
-                                new NetResponseError(400, {
-                                    type: 'text',
-                                    content: 'Invalid multipart/form-data body',
-                                }),
-                            );
+                    if (!collectError) {
+                        collectError = new NetResponseError(400, {
+                            type: 'text',
+                            content: 'Invalid multipart/form-data body',
                         });
-                } catch {
-                    if (!isThrown) {
-                        rej(
-                            new NetResponseError(400, {
-                                type: 'text',
-                                content: 'Invalid multipart/form-data body',
-                            }),
-                        );
                     }
+                    return false;
                 }
-            });
-            request.on('error', rej);
+            },
+            maxContentLength,
+        ).then(() => {
+            if (collectError) {
+                throw collectError;
+            }
+            return collector
+                .end()
+                .then(({ formValues, fileLocations }) => {
+                    return {
+                        type: 'form-data',
+                        formValues,
+                        fileLocations,
+                    } as const;
+                })
+                .catch(() => {
+                    throw new NetResponseError(400, {
+                        type: 'text',
+                        content: 'Invalid multipart/form-data body',
+                    });
+                });
         });
     }
 }

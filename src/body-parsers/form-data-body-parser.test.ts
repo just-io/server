@@ -42,7 +42,7 @@ Content-Type: text/plain
 
 0987654321
 ${boundary}
-Content-Disposition: form-data; name="TestFile"; filename="file-test.txt"
+Content-Disposition: form-data; name="TestFile"; filename*=UTF-8''file%20test.txt
 Content-Type: text/plain
 
 HiHiHi--Asrf456B
@@ -66,7 +66,7 @@ mad-vasya@example.com`;
 
 describe('Collector', () => {
     test('collect', async () => {
-        const parts = str.split(/(.{1024})/).filter(Boolean);
+        const parts = str.split(/([\n\r.]{1024})/).filter(Boolean);
 
         const files: string[] = [];
         let counter = 0;
@@ -145,7 +145,7 @@ describe('Collector', () => {
             ],
             TestFile: [
                 {
-                    filename: 'file-test.txt',
+                    filename: 'file test.txt',
                     location: '/temp/3',
                     size: 94,
                     type: 'text/plain',
@@ -167,7 +167,7 @@ describe('Collector', () => {
         ]);
     });
 
-    test('collect with error', () => {
+    test('collect with error', async () => {
         const parts = invalidStr.split(/(.{32})/).filter(Boolean);
 
         const files: string[] = [];
@@ -206,7 +206,7 @@ describe('Collector', () => {
         }
 
         const collector = new Collector(Buffer.from(boundary), 1024, create);
-        assert.rejects(async () => {
+        await assert.rejects(async () => {
             parts.forEach((part) => {
                 collector.collect(Buffer.from(part));
             });
