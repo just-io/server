@@ -10,22 +10,22 @@ export type RequestOptions = {
     shouldAbort?: (req: http.IncomingMessage) => Promise<boolean>;
 };
 
-export type RouterRequestOptions<Global, Context> = RequestOptions & {
+export type RouterRequestOptions<Location, Global, Context> = RequestOptions & {
     onCreatedNetResponse?: (
-        netRequest: NetRequest<Global, Context>,
+        netRequest: NetRequest<Location, Global, Context>,
         netResponse: NetResponse,
     ) => Promise<void>;
 };
 
-export interface Handler<Global, Context, Path extends string> {
+export interface Handler<Location, Global, Context, Path extends string> {
     name?: string;
     options?: RequestOptions;
-    handle: (netRequest: NetRequest<Global, Context, Path>) => Promise<NetResponse>;
+    handle: (netRequest: NetRequest<Location, Global, Context, Path>) => Promise<NetResponse>;
 }
 
-export type RouteHandler<Global, Context, Path extends string> =
-    | Handler<Global, Context, Path>
-    | Handler<Global, Context, Path>['handle'];
+export type RouteHandler<Location, Global, Context, Path extends string> =
+    | Handler<Location, Global, Context, Path>
+    | Handler<Location, Global, Context, Path>['handle'];
 
 export type HTTPMethod =
     | '*'
@@ -39,41 +39,45 @@ export type HTTPMethod =
     | 'OPTIONS'
     | 'TRACE';
 
-export interface Middleware<Global, Context> {
+export interface Middleware<Location, Global, Context> {
     name?: string;
     handle: (
-        netRequest: NetRequest<Global, Record<string, unknown>>,
-    ) => Promise<NetRequest<Global, Context>>;
+        netRequest: NetRequest<Location, Global, Record<string, unknown>>,
+    ) => Promise<NetRequest<Location, Global, Context>>;
 }
 
-export type RouteMiddleware<Global, Context> =
-    | Middleware<Global, Context>
-    | Middleware<Global, Context>['handle'];
+export type RouteMiddleware<Location, Global, Context> =
+    | Middleware<Location, Global, Context>
+    | Middleware<Location, Global, Context>['handle'];
 
-interface HandlerInfo<Global, Context, Path extends string = string> {
+interface HandlerInfo<Location, Global, Context, Path extends string = string> {
     method: HTTPMethod;
     path: string;
-    handler: Handler<Global, Context, Path>;
+    handler: Handler<Location, Global, Context, Path>;
     options: RequestOptions;
 }
 
-export class Router<Global, Context> {
-    #handlerPathMatcher: PathMatcher<HandlerInfo<Global, Context, string>> = new PathMatcher();
+export class Router<Location, Global, Context> {
+    #handlerPathMatcher: PathMatcher<HandlerInfo<Location, Global, Context, string>> =
+        new PathMatcher();
 
-    #middleware: Middleware<Global, Context>;
+    #middleware: Middleware<Location, Global, Context>;
 
-    #options?: RouterRequestOptions<Global, Context>;
+    #options?: RouterRequestOptions<Location, Global, Context>;
 
-    #routeHandlerMap = new Map<
-        RouteHandler<Global, Context, string>,
-        HandlerInfo<Global, Context, string>
-    >();
+    #routeHandlerMap: Map<
+        string,
+        Map<
+            RouteHandler<Location, Global, Context, string>,
+            HandlerInfo<Location, Global, Context, string>
+        >
+    > = new Map();
 
     name?: string;
 
     constructor(
-        routeMiddleware: RouteMiddleware<Global, Context>,
-        options?: RouterRequestOptions<Global, Context>,
+        routeMiddleware: RouteMiddleware<Location, Global, Context>,
+        options?: RouterRequestOptions<Location, Global, Context>,
     ) {
         const middleware =
             typeof routeMiddleware === 'function' ? { handle: routeMiddleware } : routeMiddleware;
@@ -81,14 +85,19 @@ export class Router<Global, Context> {
         this.#options = options;
     }
 
-    get onCreatedNetResponse(): RouterRequestOptions<Global, Context>['onCreatedNetResponse'] {
+    get onCreatedNetResponse(): RouterRequestOptions<
+        Location,
+        Global,
+        Context
+    >['onCreatedNetResponse'] {
         return this.#options?.onCreatedNetResponse;
     }
 
     addHandler<Path extends StringPath>(
         method: HTTPMethod,
         path: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
         const handler =
             typeof routeHandler === 'function' ? { handle: routeHandler } : routeHandler;
@@ -98,8 +107,13 @@ export class Router<Global, Context> {
             handler,
             options: Object.assign({}, this.#options, handler.options),
         };
-        this.#routeHandlerMap.set(routeHandler, handlerInfo);
-        this.#handlerPathMatcher.add(PathMatcher.toPathItems(path), handlerInfo);
+        const methodpath = `${method}:${path}`;
+        const map = this.#routeHandlerMap.get(methodpath) ?? new Map();
+        if (!this.#routeHandlerMap.has(methodpath)) {
+            this.#routeHandlerMap.set(methodpath, map);
+        }
+        map.set(routeHandler, handlerInfo);
+        this.#handlerPathMatcher.add(PathMatcher.toPathItems(path), handlerInfo, exact);
 
         return this;
     }
@@ -107,94 +121,109 @@ export class Router<Global, Context> {
     deleteHandler<Path extends StringPath>(
         method: HTTPMethod,
         path: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): boolean {
-        const handlerInfo = this.#routeHandlerMap.get(routeHandler);
+        const methodpath = `${method}:${path}`;
+        const handlerInfo = this.#routeHandlerMap.get(methodpath)?.get(routeHandler);
         if (!handlerInfo) {
             return false;
         }
 
-        this.#routeHandlerMap.delete(routeHandler);
+        this.#routeHandlerMap.get(methodpath)?.delete(routeHandler);
+        if (this.#routeHandlerMap.get(methodpath)?.size === 0) {
+            this.#routeHandlerMap.delete(methodpath);
+        }
 
-        return this.#handlerPathMatcher.delete(PathMatcher.toPathItems(path), handlerInfo);
+        return this.#handlerPathMatcher.delete(PathMatcher.toPathItems(path), handlerInfo, exact);
     }
 
     all<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('*', pattern, routeHandler);
+        return this.addHandler('*', pattern, routeHandler, exact);
     }
 
     get<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('GET', pattern, routeHandler);
+        return this.addHandler('GET', pattern, routeHandler, exact);
     }
 
     post<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('POST', pattern, routeHandler);
+        return this.addHandler('POST', pattern, routeHandler, exact);
     }
 
     patch<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('PATCH', pattern, routeHandler);
+        return this.addHandler('PATCH', pattern, routeHandler, exact);
     }
 
     delete<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('DELETE', pattern, routeHandler);
+        return this.addHandler('DELETE', pattern, routeHandler, exact);
     }
 
     put<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('PUT', pattern, routeHandler);
+        return this.addHandler('PUT', pattern, routeHandler, exact);
     }
 
     head<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('HEAD', pattern, routeHandler);
+        return this.addHandler('HEAD', pattern, routeHandler, exact);
     }
 
     connect<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('CONNECT', pattern, routeHandler);
+        return this.addHandler('CONNECT', pattern, routeHandler, exact);
     }
 
     options<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('OPTIONS', pattern, routeHandler);
+        return this.addHandler('OPTIONS', pattern, routeHandler, exact);
     }
 
     trace<Path extends StringPath>(
         pattern: Path,
-        routeHandler: RouteHandler<Global, Context, Path>,
+        routeHandler: RouteHandler<Location, Global, Context, Path>,
+        exact?: boolean,
     ): this {
-        return this.addHandler('TRACE', pattern, routeHandler);
+        return this.addHandler('TRACE', pattern, routeHandler, exact);
     }
 
     getHandlerInfo(
         method: HTTPMethod,
         pathname: StringPath,
-    ): [HandlerInfo<Global, Context>, ExtractGroup<string>] | null {
+    ): [HandlerInfo<Location, Global, Context>, ExtractGroup<string>] | null {
         const matched = this.#handlerPathMatcher.match(PathMatcher.toItems(pathname));
-        let maxMatched: null | Matched<HandlerInfo<Global, Context, string>> = null;
+        let maxMatched: null | Matched<HandlerInfo<Location, Global, Context, string>> = null;
         for (const item of matched) {
             if (item.value.method !== '*' && item.value.method !== method) {
                 continue;
@@ -211,8 +240,8 @@ export class Router<Global, Context> {
     }
 
     callHandler(
-        handlerInfo: HandlerInfo<Global, Context>,
-        request: NetRequest<Global>,
+        handlerInfo: HandlerInfo<Location, Global, Context>,
+        request: NetRequest<Location, Global>,
     ): Promise<NetResponse> {
         return this.#middleware
             .handle(request)
@@ -220,7 +249,7 @@ export class Router<Global, Context> {
     }
 }
 
-export class MiddlewarelessRouter<Global> extends Router<Global, unknown> {
+export class MiddlewarelessRouter<Location, Global> extends Router<Location, Global, unknown> {
     constructor(defaultOptions?: RequestOptions) {
         super((netRequest) => Promise.resolve(netRequest), defaultOptions);
     }

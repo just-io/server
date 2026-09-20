@@ -4,6 +4,7 @@ import { JSONNetResponseValues, JSONResponses, JSONValue, NetRequest, NetRespons
 
 export type JSONHandlerMakeParameters<
     Responses extends JSONResponses,
+    Location,
     Global,
     Context = Record<string, unknown>,
     Path extends string = string,
@@ -11,22 +12,23 @@ export type JSONHandlerMakeParameters<
     name?: string;
     options?: RequestOptions;
     reply: (
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ) => Promise<JSONNetResponseValues<Responses>>;
 };
 
 export abstract class JSONHandler<
     Responses extends JSONResponses,
+    Location,
     Global,
     Context = Record<string, unknown>,
     Path extends string = string,
-> implements Handler<Global, Context, Path>
+> implements Handler<Location, Global, Context, Path>
 {
     abstract reply(
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ): Promise<JSONNetResponseValues<Responses>>;
 
-    async handle(netRequest: NetRequest<Global, Context, Path>): Promise<NetResponse> {
+    async handle(netRequest: NetRequest<Location, Global, Context, Path>): Promise<NetResponse> {
         const result = await this.reply(netRequest);
 
         return {
@@ -42,12 +44,13 @@ export abstract class JSONHandler<
 
     static make<
         Responses extends JSONResponses,
+        Location,
         Global,
         Context = Record<string, unknown>,
         Path extends string = string,
     >(
-        parameters: JSONHandlerMakeParameters<Responses, Global, Context, Path>,
-    ): Handler<Global, Context, Path> {
+        parameters: JSONHandlerMakeParameters<Responses, Location, Global, Context, Path>,
+    ): Handler<Location, Global, Context, Path> {
         return {
             name: parameters.name,
             options: parameters.options,
@@ -71,6 +74,7 @@ export abstract class JSONHandler<
 export type JSONBodyHandlerMakeParameters<
     Value,
     Responses extends JSONResponses,
+    Location,
     Global,
     Context = Record<string, unknown>,
     Path extends string = string,
@@ -79,35 +83,36 @@ export type JSONBodyHandlerMakeParameters<
     options?: RequestOptions;
     reply: (
         value: Value,
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ) => Promise<JSONNetResponseValues<Responses>>;
     validate: (
         jsonValue: JSONValue,
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ) => Promise<Value>;
 };
 
 export abstract class JSONBodyHandler<
     Value,
     Responses extends JSONResponses,
+    Location,
     Global,
     Context = Record<string, unknown>,
     Path extends string = string,
-> implements Handler<Global, Context, Path>
+> implements Handler<Location, Global, Context, Path>
 {
     abstract reply(
         value: Value,
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ): Promise<JSONNetResponseValues<Responses>>;
 
     abstract validate(
         jsonValue: JSONValue,
-        netRequest: NetRequest<Global, Context, Path>,
+        netRequest: NetRequest<Location, Global, Context, Path>,
     ): Promise<Value>;
 
-    async handle(netRequest: NetRequest<Global, Context, Path>): Promise<NetResponse> {
+    async handle(netRequest: NetRequest<Location, Global, Context, Path>): Promise<NetResponse> {
         if (netRequest.body?.type !== 'json') {
-            throw new NetResponseError(406, { type: 'text', content: 'Not Acceptable' });
+            throw new NetResponseError(415, { type: 'text', content: 'Not Acceptable' });
         }
         const value = await this.validate(netRequest.body.content, netRequest);
 
@@ -127,18 +132,26 @@ export abstract class JSONBodyHandler<
     static make<
         Value,
         Responses extends JSONResponses,
+        Location,
         Global,
         Context = Record<string, unknown>,
         Path extends string = string,
     >(
-        parameters: JSONBodyHandlerMakeParameters<Value, Responses, Global, Context, Path>,
-    ): Handler<Global, Context, Path> {
+        parameters: JSONBodyHandlerMakeParameters<
+            Value,
+            Responses,
+            Location,
+            Global,
+            Context,
+            Path
+        >,
+    ): Handler<Location, Global, Context, Path> {
         return {
             name: parameters.name,
             options: parameters.options,
             handle: async (netRequest) => {
                 if (netRequest.body?.type !== 'json') {
-                    throw new NetResponseError(406, { type: 'text', content: 'Not Acceptable' });
+                    throw new NetResponseError(415, { type: 'text', content: 'Not Acceptable' });
                 }
                 const value = await parameters.validate(netRequest.body.content, netRequest);
 

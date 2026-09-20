@@ -91,14 +91,14 @@ export function getMimeTypeByFileExtension(filename: string): string {
 }
 
 export function makeLocalFileStorage(pathToDirectory: string): {
-    createFileLocation(): FileLocation;
+    createFileLocation(): FileLocation<string>;
 } {
     if (!fs.existsSync(pathToDirectory) || !fs.statSync(pathToDirectory).isDirectory()) {
         fs.mkdirSync(pathToDirectory, { recursive: true });
     }
 
     return {
-        createFileLocation: (): FileLocation => {
+        createFileLocation: (): FileLocation<string> => {
             const name = crypto.randomUUID();
             const location = path.join(pathToDirectory, name);
 

@@ -38,7 +38,6 @@ Content-Type: text/plain
 ${'0123'.repeat(1024 * 1024)}
 ${boundary}
 Content-Disposition: form-data; name="AttachedFiles"; filename="text3.txt"
-Content-Type: text/plain
 
 0987654321
 ${boundary}
@@ -71,7 +70,7 @@ describe('Collector', () => {
         const files: string[] = [];
         let counter = 0;
 
-        function create(): FileLocation {
+        function create(): FileLocation<string> {
             let file = Buffer.alloc(0);
             const writeStream = new Writable({
                 write(chunk: Buffer, encoding, callback) {
@@ -110,9 +109,10 @@ describe('Collector', () => {
         const result = await collector.end();
 
         assert.ok(typeof result.fileLocations === 'object' && result.fileLocations !== null);
-        assert.ok(result.fileLocations['/temp/0'].location === '/temp/0');
-        assert.ok(result.fileLocations['/temp/1'].location === '/temp/1');
-        assert.ok(result.fileLocations['/temp/2'].location === '/temp/2');
+        assert.ok(result.fileLocations.AttachedFiles[0].location === '/temp/0');
+        assert.ok(result.fileLocations.AttachedFiles[1].location === '/temp/1');
+        assert.ok(result.fileLocations.AttachedFiles[2].location === '/temp/2');
+        assert.ok(result.fileLocations.TestFile[0].location === '/temp/3');
 
         assert.deepStrictEqual(result.formValues, {
             DestAddress: ['brutal-vasya@example.com', 'mad-vasya@example.com'],
@@ -140,7 +140,7 @@ describe('Collector', () => {
                     filename: 'text3.txt',
                     location: '/temp/2',
                     size: 10,
-                    type: 'text/plain',
+                    type: 'application/octet-stream',
                 },
             ],
             TestFile: [
@@ -173,7 +173,7 @@ describe('Collector', () => {
         const files: string[] = [];
         let counter = 0;
 
-        function create(): FileLocation {
+        function create(): FileLocation<string> {
             let file = Buffer.alloc(0);
             const writeStream = new Writable({
                 write(chunk: Buffer, encoding, callback) {

@@ -18,7 +18,7 @@ const PORT = 8442;
 const ADDRESS = `http://localhost:${PORT}`;
 
 describe('JSON handlers', () => {
-    const server = new Server<unknown>(new http.Server(), {
+    const server = new Server<unknown, unknown>(new http.Server(), {
         createFileLocation,
         makeGlobal: () => Promise.resolve(),
     });
@@ -30,6 +30,7 @@ describe('JSON handlers', () => {
                 '/:id',
                 JSONHandler.make<
                     { 200: { value: number; id: string }; 400: { errors: string[] } },
+                    unknown,
                     unknown,
                     unknown,
                     '/:id'
@@ -67,6 +68,7 @@ describe('JSON handlers', () => {
                 JSONBodyHandler.make<
                     { count: number },
                     { 200: { value: number; id: string }; 400: { errors: string[] } },
+                    unknown,
                     unknown,
                     unknown,
                     '/:id'
@@ -107,9 +109,10 @@ describe('JSON handlers', () => {
                     { 200: { value: number; id: string }; 400: { errors: string[] } },
                     unknown,
                     unknown,
+                    unknown,
                     '/class/:id'
                 > {
-                    async reply(netRequest: NetRequest<unknown, unknown, '/class/:id'>) {
+                    async reply(netRequest: NetRequest<unknown, unknown, unknown, '/class/:id'>) {
                         if (netRequest.url.searchParams.get('count') == null) {
                             return {
                                 status: 400 as const,
@@ -144,11 +147,12 @@ describe('JSON handlers', () => {
                     { 200: { value: number; id: string }; 400: { errors: string[] } },
                     unknown,
                     unknown,
+                    unknown,
                     '/class/:id'
                 > {
                     async reply(
                         value: { count: number },
-                        netRequest: NetRequest<unknown, unknown, '/class/:id'>,
+                        netRequest: NetRequest<unknown, unknown, unknown, '/class/:id'>,
                     ) {
                         return {
                             status: 200 as const,
@@ -328,6 +332,19 @@ describe('JSON handlers', () => {
                 assert.deepStrictEqual(result, {
                     errors: ['Not Acceptable'],
                 });
+            });
+
+            test('should return 415 of invalid type', async () => {
+                const response = await fetch(`${ADDRESS}/json/class/id`, {
+                    method: 'POST',
+                    body: '',
+                    headers: {
+                        'content-type': 'text/html',
+                    },
+                });
+                const result = await response.text();
+                assert.equal(response.status, 415);
+                assert.deepStrictEqual(result, 'Not Acceptable');
             });
 
             test('should return 200 of valid paprameter', async () => {

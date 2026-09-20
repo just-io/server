@@ -29,20 +29,20 @@ type UserContext = {
 
 describe('Server API', () => {
     const requestCount: Record<string, number> = {};
-    const server = new Server<unknown>(new http.Server(), {
+    const server = new Server<string, unknown>(new http.Server(), {
         createFileLocation,
         makeGlobal: () => Promise.resolve(),
     });
     server
         .addRouter(
             '/found',
-            new MiddlewarelessRouter().get('/', () => {
+            new MiddlewarelessRouter<string, unknown>().get('/', () => {
                 return Promise.resolve({});
             }),
         )
         .addRouter(
             '/common-router',
-            new MiddlewarelessRouter()
+            new MiddlewarelessRouter<string, unknown>()
                 .get('/path-with-empty', () => {
                     return Promise.resolve({});
                 })
@@ -178,8 +178,10 @@ describe('Server API', () => {
         )
         .addRouter(
             '/context-router',
-            new Router<unknown, UserContext>(
-                (netRequest: NetRequest<unknown>): Promise<NetRequest<unknown, UserContext>> => {
+            new Router<string, unknown, UserContext>(
+                (
+                    netRequest: NetRequest<string, unknown>,
+                ): Promise<NetRequest<string, unknown, UserContext>> => {
                     const authorization = netRequest.headers.authorization;
                     if (!authorization) {
                         return Promise.reject(new NetResponseError(403));
@@ -215,7 +217,7 @@ describe('Server API', () => {
         )
         .addRouter(
             '/body-router',
-            new MiddlewarelessRouter()
+            new MiddlewarelessRouter<string, unknown>()
                 .post('/path-with-json', (netRequest) => {
                     if (netRequest.body?.type !== 'json') {
                         return Promise.reject(
@@ -728,7 +730,7 @@ type ContextInfo = {
 
 describe('Server inside', () => {
     test('should make Global', async () => {
-        const server = new Server<Info>(new http.Server(), {
+        const server = new Server<string, Info>(new http.Server(), {
             createFileLocation,
             makeGlobal: () =>
                 Promise.resolve({
@@ -736,7 +738,7 @@ describe('Server inside', () => {
                 }),
         }).addRouter(
             '/global',
-            new MiddlewarelessRouter<Info>().get('/', async (netRequest) => {
+            new MiddlewarelessRouter<string, Info>().get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.global, { serverName: 'localhost' });
                 return {};
             }),
@@ -753,12 +755,12 @@ describe('Server inside', () => {
     });
 
     test('should make Context', async () => {
-        const server = new Server<unknown>(new http.Server(), {
+        const server = new Server<string, unknown>(new http.Server(), {
             createFileLocation,
             makeGlobal: () => Promise.resolve(),
         }).addRouter(
             '/context',
-            new Router<unknown, ContextInfo>((netRequest) =>
+            new Router<string, unknown, ContextInfo>((netRequest) =>
                 Promise.resolve(updateContext(netRequest, { info: 'test' })),
             ).get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.context, { info: 'test' });
@@ -787,13 +789,13 @@ describe('Server inside', () => {
             return Promise.resolve();
         }
 
-        const server = new Server<unknown>(new http.Server(), {
+        const server = new Server<string, unknown>(new http.Server(), {
             createFileLocation,
             onRequestFinished,
             makeGlobal: () => Promise.resolve(),
         }).addRouter(
             '/finish',
-            new Router<unknown, ContextInfo>((netRequest) =>
+            new Router<string, unknown, ContextInfo>((netRequest) =>
                 Promise.resolve(updateContext(netRequest, { info: 'test' })),
             ).get('/', async (netRequest) => {
                 assert.deepStrictEqual(netRequest.context, { info: 'test' });
@@ -815,14 +817,14 @@ describe('Server inside', () => {
 
 describe('Server', () => {
     test('should delete router', async () => {
-        const server = new Server<unknown>(new http.Server(), {
+        const server = new Server<string, unknown>(new http.Server(), {
             createFileLocation,
             makeGlobal: () => Promise.resolve(),
         });
         const handler = () => {
             return Promise.resolve({});
         };
-        const router = new MiddlewarelessRouter().get('/', handler);
+        const router = new MiddlewarelessRouter<string, unknown>().get('/', handler);
         server.addRouter('/handler', router);
 
         server.listen(PORT + 4);
@@ -843,14 +845,14 @@ describe('Server', () => {
     });
 
     test('should delete handler', async () => {
-        const server = new Server<unknown>(new http.Server(), {
+        const server = new Server<string, unknown>(new http.Server(), {
             createFileLocation,
             makeGlobal: () => Promise.resolve(),
         });
         const handler = () => {
             return Promise.resolve({});
         };
-        const router = new MiddlewarelessRouter().get('/', handler);
+        const router = new MiddlewarelessRouter<string, unknown>().get('/', handler);
         server.addRouter('/handler', router);
 
         server.listen(PORT + 5);
@@ -860,7 +862,7 @@ describe('Server', () => {
         assert.equal(response.status, 200);
         assert.equal(result, '');
 
-        router.deleteHandler('DELETE', '/', handler);
+        router.deleteHandler('GET', '/', handler);
 
         const responseAfterDeleting = await fetch(`http://localhost:${PORT + 5}/handler`);
         const resultAfterDeleting = await responseAfterDeleting.text();

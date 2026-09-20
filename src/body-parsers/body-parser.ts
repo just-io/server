@@ -1,19 +1,20 @@
 import http from 'node:http';
-import { NetRequestBody } from '../types';
+import { CreateFileLocation, NetRequestBody } from '../types';
 import { NetResponseError } from '../components/net-response-error';
 
-export default abstract class BodyParser {
+export default abstract class BodyParser<Location> {
     abstract parse(
         request: http.IncomingMessage,
+        createNewFileLocation: CreateFileLocation<Location>,
         maxContentLength?: number,
-    ): Promise<NetRequestBody | null>;
+    ): Promise<NetRequestBody<Location> | null>;
 
     readBody(
         request: http.IncomingMessage,
         onChunkGot: (chunk: Buffer) => boolean,
         maxContentLength?: number,
     ): Promise<number> {
-        return new Promise((res, rej) => {
+        return new Promise<number>((res, rej) => {
             let contentLength = 0;
             let settled = false;
 
@@ -48,6 +49,8 @@ export default abstract class BodyParser {
                     rej(err);
                 }
             });
+        }).finally(() => {
+            request.destroy();
         });
     }
 }

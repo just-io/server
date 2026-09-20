@@ -5,7 +5,8 @@ import { NetResponse } from '../types';
 import { getMimeTypeByFileExtension } from './files';
 import { NetResponseError } from '../components/net-response-error';
 
-export class StaticRouter<Global, Context = Record<string, unknown>> extends Router<
+export class StaticRouter<Location, Global, Context = Record<string, unknown>> extends Router<
+    Location,
     Global,
     Context
 > {
@@ -13,7 +14,7 @@ export class StaticRouter<Global, Context = Record<string, unknown>> extends Rou
 
     constructor(
         pathToFolder: string,
-        middleware: Middleware<Global, Context>,
+        middleware: Middleware<Location, Global, Context>,
         defaultOptions?: RequestOptions,
     ) {
         super(middleware, defaultOptions);

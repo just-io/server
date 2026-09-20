@@ -1,14 +1,15 @@
 import http from 'node:http';
 
-import { NetRequestBody } from '../types';
+import { CreateFileLocation, NetRequestBody } from '../types';
 import BodyParser from './body-parser';
 import { NetResponseError } from '../components/net-response-error';
 
-export default class TextBodyParser extends BodyParser {
+export default class TextBodyParser<Location> extends BodyParser<Location> {
     parse(
         request: http.IncomingMessage,
+        createNewFileLocation: CreateFileLocation<Location>,
         maxContentLength?: number,
-    ): Promise<NetRequestBody | null> {
+    ): Promise<NetRequestBody<Location> | null> {
         const chunks: Buffer[] = [];
 
         return this.readBody(

@@ -10,6 +10,7 @@ import {
     CreateFileLocation,
     ParserType,
     RequestProcessingInfo,
+    FileLocation,
 } from './types';
 import FormDataBodyParser from './body-parsers/form-data-body-parser';
 import UrencodedBodyParser from './body-parsers/urlencoded-body-parser';
@@ -21,16 +22,16 @@ import TextBodyParser from './body-parsers/text-body-parser';
 import { Period } from './components/period';
 import { PathMatcher, StringPath } from './components/path-matcher';
 
-export interface ServerSettings<Global> {
-    createFileLocation: CreateFileLocation;
+export interface ServerSettings<Location, Global> {
+    createFileLocation: CreateFileLocation<Location>;
     onCreatedNetResponse?: (
-        netRequest: NetRequest<Global>,
+        netRequest: NetRequest<Location, Global>,
         netResponse: NetResponse,
     ) => Promise<void>;
     onRequestFinished?: (
         request: http.IncomingMessage,
         requestProcessingInfo: RequestProcessingInfo,
-        netRequest?: NetRequest<Global>,
+        netRequest?: NetRequest<Location, Global>,
         netResponse?: NetResponse,
     ) => Promise<void>;
     makeGlobal: (request: http.IncomingMessage) => Promise<Global>;
@@ -54,22 +55,22 @@ const DEFAULT_REQUEST_ID_EXTRACTOR = (request: http.IncomingMessage) =>
         ? request.headers['x-request-id'][0]
         : request.headers['x-request-id']) ?? crypto.randomUUID();
 
-export class Server<Global> {
-    #routerPathMatcher: PathMatcher<Router<Global, unknown>> = new PathMatcher();
+export class Server<Location, Global> {
+    #routerPathMatcher: PathMatcher<Router<Location, Global, unknown>> = new PathMatcher();
 
-    #settings: ServerSettings<Global>;
+    #settings: ServerSettings<Location, Global>;
 
     #httpServer: http.Server;
 
     #typeParserEntries: [string, ParserType][];
 
-    #parsers: Record<ParserType, BodyParser>;
+    #parsers: Record<ParserType, BodyParser<Location>>;
 
     #abortControllers: Set<AbortController> = new Set();
 
     #handlingPromises: Set<Promise<void>> = new Set();
 
-    constructor(httpServer: http.Server, settings: ServerSettings<Global>) {
+    constructor(httpServer: http.Server, settings: ServerSettings<Location, Global>) {
         this.#httpServer = httpServer;
         this.#settings = settings;
         this.#httpServer.on('request', (request, response) => {
@@ -84,11 +85,11 @@ export class Server<Global> {
                 });
         });
         this.#parsers = {
-            'form-data': new FormDataBodyParser(this.#settings.createFileLocation),
-            urlencoded: new UrencodedBodyParser(),
-            json: new JsonBodyParser(),
-            buffer: new BufferBodyParser(this.#settings.createFileLocation),
-            text: new TextBodyParser(),
+            'form-data': new FormDataBodyParser<Location>(),
+            urlencoded: new UrencodedBodyParser<Location>(),
+            json: new JsonBodyParser<Location>(),
+            buffer: new BufferBodyParser<Location>(),
+            text: new TextBodyParser<Location>(),
         };
 
         this.#typeParserEntries = Object.entries({
@@ -127,21 +128,22 @@ export class Server<Global> {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    addRouter(prefix: StringPath, router: Router<Global, any>): this {
+    addRouter(prefix: StringPath, router: Router<Location, Global, any>): this {
         this.#routerPathMatcher.add(PathMatcher.toPathItems(prefix), router);
 
         return this;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    deleteRouter(prefix: StringPath, router: Router<Global, any>): boolean {
+    deleteRouter(prefix: StringPath, router: Router<Location, Global, any>): boolean {
         return this.#routerPathMatcher.delete(PathMatcher.toPathItems(prefix), router);
     }
 
     #parseBody(
         request: http.IncomingMessage,
+        createNewFileLocation: CreateFileLocation<Location>,
         maxContentLength?: number,
-    ): Promise<NetRequestBody | null> {
+    ): Promise<NetRequestBody<Location> | null> {
         if (
             request.headers['content-length'] === undefined &&
             request.headers['transfer-encoding'] === undefined
@@ -150,15 +152,27 @@ export class Server<Global> {
         }
         const type = request.headers['content-type'];
         if (!type) {
-            return this.#parsers[DEFAULT_TYPE_PARSER].parse(request, maxContentLength);
+            return this.#parsers[DEFAULT_TYPE_PARSER].parse(
+                request,
+                createNewFileLocation,
+                maxContentLength,
+            );
         }
         const typeParserEntry = this.#typeParserEntries.find((aTypeParserEntry) =>
-            type.includes(aTypeParserEntry[0]),
+            type.startsWith(aTypeParserEntry[0]),
         );
         if (typeParserEntry) {
-            return this.#parsers[typeParserEntry[1]].parse(request);
+            return this.#parsers[typeParserEntry[1]].parse(
+                request,
+                createNewFileLocation,
+                maxContentLength,
+            );
         }
-        return this.#parsers[DEFAULT_TYPE_PARSER].parse(request);
+        return this.#parsers[DEFAULT_TYPE_PARSER].parse(
+            request,
+            createNewFileLocation,
+            maxContentLength,
+        );
     }
 
     #writeContentToStream(stream: Writable, content: Buffer): Promise<void> {
@@ -373,11 +387,11 @@ export class Server<Global> {
     #composeNetRequest(
         request: http.IncomingMessage,
         abortSignal: AbortSignal,
-    ): Promise<NetRequest<Global>> {
+    ): Promise<NetRequest<Location, Global>> {
         return this.#settings.makeGlobal(request).then((global) => {
             let cookies: Record<string, string> | undefined;
 
-            const netRequest: NetRequest<Global> = {
+            const netRequest: NetRequest<Location, Global> = {
                 method: request.method as string,
                 url: new URL(request.url ?? '', `http://${request.headers.host}`),
                 headers: request.headers,
@@ -416,13 +430,12 @@ export class Server<Global> {
         });
     }
 
-    async #cleanup(netRequest?: NetRequest<Global>): Promise<void> {
-        if (netRequest?.body?.type === 'buffer') {
-            await netRequest.body.fileLocation.cleanup();
-        } else if (netRequest?.body?.type === 'form-data') {
-            for (const fileLocation of Object.values(netRequest.body.fileLocations)) {
-                await fileLocation.cleanup();
-            }
+    async #cleanup(fileLocations?: FileLocation<Location>[]): Promise<void> {
+        if (!fileLocations) {
+            return;
+        }
+        for (const fileLocation of fileLocations) {
+            await fileLocation.cleanup();
         }
     }
 
@@ -431,11 +444,12 @@ export class Server<Global> {
         response: http.ServerResponse,
         requestProcessingInfo: RequestProcessingInfo,
         destroy: boolean,
-        netRequest?: NetRequest<Global>,
+        fileLocations?: FileLocation<Location>[],
+        netRequest?: NetRequest<Location, Global>,
         netResponse?: NetResponse,
     ): Promise<void> {
         if (requestProcessingInfo.finishedReason === 'socket-closed' || !netResponse) {
-            await this.#cleanup(netRequest);
+            await this.#cleanup(fileLocations);
             return this.#settings.onRequestFinished?.(
                 request,
                 requestProcessingInfo,
@@ -460,7 +474,7 @@ export class Server<Global> {
             request.destroy();
         }
         Period.end(requestProcessingInfo.periods.total);
-        await this.#cleanup(netRequest);
+        await this.#cleanup(fileLocations);
         return this.#settings.onRequestFinished?.(
             request,
             requestProcessingInfo,
@@ -477,7 +491,22 @@ export class Server<Global> {
             finishedReason: 'handled',
         };
         const url = new URL(request.url ?? '', `http://${request.headers.host}`);
-        const pathname = decodeURIComponent(url.pathname) as StringPath;
+        let pathname: StringPath;
+        try {
+            pathname = decodeURIComponent(url.pathname) as StringPath;
+        } catch (error) {
+            requestProcessingInfo.finishedReason = 'error';
+            requestProcessingInfo.error = error as Error;
+            return this.#finishRequest(
+                request,
+                response,
+                requestProcessingInfo,
+                true,
+                undefined,
+                undefined,
+                new NetResponseError(400, { type: 'text', content: 'Bad Request' }),
+            );
+        }
         const items = PathMatcher.toItems(pathname);
         const matchedRouter = this.#routerPathMatcher.matchLongest(items);
         if (!matchedRouter) {
@@ -487,6 +516,7 @@ export class Server<Global> {
                 response,
                 requestProcessingInfo,
                 true,
+                undefined,
                 undefined,
                 new NetResponseError(404, { type: 'text', content: 'Not Found' }),
             );
@@ -509,6 +539,7 @@ export class Server<Global> {
                 requestProcessingInfo,
                 true,
                 undefined,
+                undefined,
                 new NetResponseError(404, { type: 'text', content: 'Not Found' }),
             );
         }
@@ -526,6 +557,7 @@ export class Server<Global> {
                     response,
                     requestProcessingInfo,
                     true,
+                    undefined,
                     undefined,
                     new NetResponseError(413, { type: 'text', content: 'Content Too Large' }),
                 );
@@ -546,6 +578,7 @@ export class Server<Global> {
                 requestProcessingInfo,
                 true,
                 undefined,
+                undefined,
                 new NetResponseError(406, { type: 'text', content: 'Not Acceptable' }),
             );
         }
@@ -562,6 +595,7 @@ export class Server<Global> {
                     requestProcessingInfo,
                     true,
                     undefined,
+                    undefined,
                     new NetResponseError(429, { type: 'text', content: 'Too many requests' }),
                 );
             }
@@ -574,14 +608,40 @@ export class Server<Global> {
         };
         request.socket.on('close', onSocketClose);
         requestProcessingInfo.periods.composingNetRequest = Period.make();
-        const netRequest = await this.#composeNetRequest(request, abortController.signal);
+        let netRequest: NetRequest<Location, Global>;
+        try {
+            netRequest = await this.#composeNetRequest(request, abortController.signal);
+        } catch (error) {
+            requestProcessingInfo.finishedReason = 'error';
+            requestProcessingInfo.error = error as Error;
+            return this.#finishRequest(
+                request,
+                response,
+                requestProcessingInfo,
+                true,
+                undefined,
+                undefined,
+                new NetResponseError(400, { type: 'text', content: 'Bad Request' }),
+            );
+        }
         Period.end(requestProcessingInfo.periods.composingNetRequest);
         this.#abortControllers.add(abortController);
 
         let netResponse: NetResponse | undefined;
+        const fileLocations: FileLocation<Location>[] = [];
+        const createNewFileLocation = () => {
+            const fileLocation = this.#settings.createFileLocation();
+            fileLocations.push(fileLocation);
+            return fileLocation;
+        };
+
         try {
             requestProcessingInfo.periods.parsingBody = Period.make();
-            netRequest.body = await this.#parseBody(request, info.options?.maxContentLength);
+            netRequest.body = await this.#parseBody(
+                request,
+                createNewFileLocation,
+                info.options?.maxContentLength,
+            );
             Period.end(requestProcessingInfo.periods.parsingBody);
             netRequest.pathname.router = pathname;
             netRequest.pathname.groups = result;
@@ -591,13 +651,15 @@ export class Server<Global> {
                 netResponse = await Promise.race([
                     matchedRouter.value
                         .callHandler(info, netRequest)
+                        .finally(() => {
+                            clearTimeout(timeout);
+                        })
                         // eslint-disable-next-line @typescript-eslint/no-shadow
                         .then((netResponse) => {
                             if (requestProcessingInfo.finishedReason === 'timeout') {
                                 return;
                             }
                             Period.end(requestProcessingInfo.periods.handling!);
-                            clearTimeout(timeout);
                             if (matchedRouter.value.onCreatedNetResponse) {
                                 return matchedRouter.value
                                     .onCreatedNetResponse(netRequest, netResponse)
@@ -664,6 +726,7 @@ export class Server<Global> {
             response,
             requestProcessingInfo,
             false,
+            fileLocations,
             netRequest,
             netResponse,
         ).then(() => {
@@ -672,10 +735,10 @@ export class Server<Global> {
     }
 }
 
-export class GloballessServer extends Server<unknown> {
+export class GloballessServer extends Server<Location, unknown> {
     constructor(
         httpServer: http.Server,
-        serverSettings: Omit<ServerSettings<unknown>, 'makeGlobal'>,
+        serverSettings: Omit<ServerSettings<Location, unknown>, 'makeGlobal'>,
     ) {
         super(httpServer, { ...serverSettings, makeGlobal: () => Promise.resolve() });
     }

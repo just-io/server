@@ -33,7 +33,7 @@ export type JSONNetResponseValues<R extends JSONResponses> = {
     };
 }[keyof R];
 
-export interface FileLocation {
+export interface FileLocation<Location> {
     writeStream: {
         write(chunk: Buffer): void;
         end(cb?: () => void): void;
@@ -42,24 +42,29 @@ export interface FileLocation {
         read(size: number): Buffer | null;
     };
     cleanup: () => Promise<void>;
-    location: string;
+    location: Location;
 }
 
-export type FileData = {
+export type CreateFileLocation<Location> = () => FileLocation<Location>;
+
+export type FileData<Location> = {
     filename: string;
     type: string;
     size: number;
-    location: string;
+    location: Location;
 };
 
-export type FormValues = Record<string, [string | FileData, ...(string | FileData)[]]>;
+export type FormValues<Location> = Record<
+    string,
+    [string | FileData<Location>, ...(string | FileData<Location>)[]]
+>;
 
 export type ParserType = 'form-data' | 'text' | 'urlencoded' | 'json' | 'buffer';
 
-export type NetRequestBody =
+export type NetRequestBody<Location> =
     | {
           type: 'buffer';
-          fileLocation: Omit<FileLocation, 'writeStream'>;
+          fileLocation: Omit<FileLocation<Location>, 'writeStream' | 'cleanup'>;
       }
     | {
           type: 'urlencoded';
@@ -67,8 +72,8 @@ export type NetRequestBody =
       }
     | {
           type: 'form-data';
-          fileLocations: Record<string, Omit<FileLocation, 'writeStream'>>;
-          formValues: FormValues;
+          fileLocations: Record<string, Omit<FileLocation<Location>, 'writeStream' | 'cleanup'>[]>;
+          formValues: FormValues<Location>;
       }
     | {
           type: 'text';
@@ -80,6 +85,7 @@ export type NetRequestBody =
       };
 
 export interface NetRequest<
+    Location,
     Global = Record<string, unknown>,
     Context = Record<string, unknown>,
     Path extends string = string,
@@ -88,7 +94,7 @@ export interface NetRequest<
     url: URL;
     headers: http.IncomingHttpHeaders;
     cookies: Record<string, string>;
-    body: NetRequestBody | null;
+    body: NetRequestBody<Location> | null;
     id: string;
     startedAt: number;
     pathname: {
@@ -162,8 +168,6 @@ export interface NetResponse {
     cookies?: Cookie[];
 }
 
-export type CreateFileLocation = () => FileLocation;
-
 export type RequestFinishedReason =
     | 'not-found'
     | 'length-required'
@@ -180,6 +184,7 @@ export type RequestProcessingInfo = {
     router?: string;
     handler?: string;
     finishedReason: RequestFinishedReason;
+    error?: Error;
     periods: {
         total: PeriodData;
         composingNetRequest?: PeriodData;

@@ -149,7 +149,7 @@ class Reader {
     }
 }
 
-type CollectorState =
+type CollectorState<Location> =
     | {
           state: 'inited';
       }
@@ -165,11 +165,11 @@ type CollectorState =
       }
     | {
           state: 'reading-file-header';
-          file: FileInfo;
+          file: FileInfo<Location>;
       }
     | {
           state: 'reading-file-content';
-          file: FileInfo;
+          file: FileInfo<Location>;
       }
     | {
           state: 'finished';
@@ -180,35 +180,39 @@ interface ValueInfo {
     parts: Buffer[];
 }
 
-interface FileInfo extends FileData {
+interface FileInfo<Location> extends FileData<Location> {
     name: string;
-    fileLocation: FileLocation;
+    fileLocation: FileLocation<Location>;
 }
 
-export class Collector {
+export class Collector<Location> {
     static #rBuffer = Buffer.from('\r');
 
     static #nBuffer = Buffer.from('\n');
 
     static #doubleDashBuffer = Buffer.from('--');
 
-    #formValues: FormValues = {};
+    #formValues: FormValues<Location> = {};
 
-    #fileLocations: Record<string, FileLocation> = {};
+    #fileLocations: Record<string, FileLocation<Location>[]> = {};
 
     #boundary: Buffer;
 
     #minSize: number;
 
-    #state: CollectorState = {
+    #state: CollectorState<Location> = {
         state: 'inited',
     };
 
-    #createNewFileLocation: CreateFileLocation;
+    #createNewFileLocation: CreateFileLocation<Location>;
 
     #reader: Reader = new Reader();
 
-    constructor(boundary: Buffer, minSize: number, createNewFileLocation: CreateFileLocation) {
+    constructor(
+        boundary: Buffer,
+        minSize: number,
+        createNewFileLocation: CreateFileLocation<Location>,
+    ) {
         this.#boundary = boundary;
         this.#minSize = minSize;
         this.#createNewFileLocation = createNewFileLocation;
@@ -219,13 +223,18 @@ export class Collector {
         this.#process();
     }
 
-    end(): Promise<{ fileLocations: Record<string, FileLocation>; formValues: FormValues }> {
+    end(): Promise<{
+        fileLocations: Record<string, FileLocation<Location>[]>;
+        formValues: FormValues<Location>;
+    }> {
         this.#process(true);
 
         return Promise.all(
-            Object.values(this.#fileLocations).map(
-                (fileLocation) =>
-                    new Promise<void>((resolve) => fileLocation.writeStream.end(resolve)),
+            Object.values(this.#fileLocations).flatMap((fileLocations) =>
+                fileLocations.map(
+                    (fileLocation) =>
+                        new Promise<void>((resolve) => fileLocation.writeStream.end(resolve)),
+                ),
             ),
         ).then(() => {
             return {
@@ -275,7 +284,7 @@ export class Collector {
                 this.#readEmpty();
                 const line = this.#readLine();
                 const [header, ...parts] = line.split(';').map((part) => part.trim());
-                if (header !== 'Content-Disposition: form-data') {
+                if (header.toLowerCase() !== 'content-disposition: form-data') {
                     throw new Error('Invalid header line');
                 }
                 let name = '';
@@ -345,13 +354,17 @@ export class Collector {
             case 'reading-file-header': {
                 this.#readEmpty();
                 const line = this.#readLine();
-                const matched = line.match(/Content-Type: (.+)/i);
-                if (!matched) {
-                    throw new Error('Invalid header type line');
+                if (line === '') {
+                    this.#state.file.type = 'application/octet-stream';
+                } else {
+                    const matched = line.match(/Content-Type: (.+)/i);
+                    if (!matched) {
+                        throw new Error('Invalid header type line');
+                    }
+                    const [, type] = matched;
+                    this.#state.file.type = type;
+                    this.#readEmpty();
                 }
-                const [, type] = matched;
-                this.#state.file.type = type;
-                this.#readEmpty();
                 this.#readEmpty();
                 this.#state = {
                     state: 'reading-file-content',
@@ -368,8 +381,10 @@ export class Collector {
                     const cutContent = this.#cutLastNewLineSymbols(content);
                     this.#state.file.fileLocation.writeStream.write(cutContent);
                     this.#state.file.size += cutContent.length;
-                    this.#fileLocations[this.#state.file.fileLocation.location] =
-                        this.#state.file.fileLocation;
+                    if (!this.#fileLocations[this.#state.file.name]) {
+                        this.#fileLocations[this.#state.file.name] = [];
+                    }
+                    this.#fileLocations[this.#state.file.name].push(this.#state.file.fileLocation);
                     if (!this.#formValues[this.#state.file.name]) {
                         this.#formValues[this.#state.file.name] = [
                             {
@@ -442,21 +457,15 @@ export class Collector {
     }
 }
 
-export default class FormDataBodyParser extends BodyParser {
-    #createNewFileLocation: CreateFileLocation;
-
-    constructor(createNewFileLocation: CreateFileLocation) {
-        super();
-        this.#createNewFileLocation = createNewFileLocation;
-    }
-
+export default class FormDataBodyParser<Location> extends BodyParser<Location> {
     parse(
         request: http.IncomingMessage,
+        createNewFileLocation: CreateFileLocation<Location>,
         maxContentLength?: number,
-    ): Promise<NetRequestBody | null> {
+    ): Promise<NetRequestBody<Location> | null> {
         const type = request.headers['content-type'] ?? '';
-        const boundary = type.match(/boundary="?([^"]+)"?/)?.[1];
-        if (!boundary) {
+        const matched = type.match(/boundary="?([^";]+)"?(:?; charset=(.+))?/);
+        if (!matched) {
             return Promise.reject(
                 new NetResponseError(400, {
                     type: 'text',
@@ -464,10 +473,11 @@ export default class FormDataBodyParser extends BodyParser {
                 }),
             );
         }
+        const [, boundary] = matched;
         const collector = new Collector(
             Buffer.from('--' + boundary),
             boundary.length * 10,
-            this.#createNewFileLocation,
+            createNewFileLocation,
         );
         let collectError: NetResponseError | undefined;
 
@@ -489,25 +499,31 @@ export default class FormDataBodyParser extends BodyParser {
                 }
             },
             maxContentLength,
-        ).then(() => {
-            if (collectError) {
-                throw collectError;
-            }
-            return collector
-                .end()
-                .then(({ formValues, fileLocations }) => {
-                    return {
-                        type: 'form-data',
-                        formValues,
-                        fileLocations,
-                    } as const;
-                })
-                .catch(() => {
-                    throw new NetResponseError(400, {
-                        type: 'text',
-                        content: 'Invalid multipart/form-data body',
+        )
+            .then(() => {
+                if (collectError) {
+                    throw collectError;
+                }
+                return collector
+                    .end()
+                    .then(({ formValues, fileLocations }) => {
+                        return {
+                            type: 'form-data',
+                            formValues,
+                            fileLocations,
+                        } as const;
+                    })
+                    .catch(() => {
+                        throw new NetResponseError(400, {
+                            type: 'text',
+                            content: 'Invalid multipart/form-data body',
+                        });
                     });
+            })
+            .catch((error) => {
+                return collector.end().then(() => {
+                    throw error;
                 });
-        });
+            });
     }
 }
